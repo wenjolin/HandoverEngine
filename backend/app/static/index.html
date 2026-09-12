@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>交接學習平台</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css?v=20260912a" />
+</head>
+<body>
+  <div class="shell" id="shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand-block">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-text">
+          <p class="brand">交接學習</p>
+          <p class="brand-sub">Handover Pack</p>
+        </div>
+        <button type="button" class="side-toggle" id="btnToggleSidebar" aria-label="收起側邊欄" title="收起／展開">‹</button>
+      </div>
+
+      <nav class="side-nav" aria-label="功能導覽">
+        <button type="button" class="nav-item active" data-view="home" id="navHome">課程首頁</button>
+        <button type="button" class="nav-item" data-view="learn" id="navLearn" disabled>每日學習</button>
+        <button type="button" class="nav-item" data-view="gaps" id="navGaps" disabled>交接缺口</button>
+      </nav>
+
+      <div class="side-section side-grow">
+        <h2>最近學習</h2>
+        <div class="recent-one" id="recentList"></div>
+        <p class="empty-hint" id="recentEmpty">尚無紀錄。完成分析後會顯示最近一次課程。</p>
+        <p class="err" id="recentError"></p>
+      </div>
+
+      <div class="side-foot">
+        <button type="button" class="ghost full hidden" id="btnClearAll">清除紀錄</button>
+        <p class="meta docs-link"><a href="/docs" target="_blank" rel="noreferrer">Swagger</a></p>
+      </div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <div class="greet">
+          <div class="date-chip" id="dateChip">—</div>
+          <div>
+            <p class="greet-kicker" id="greetKicker">歡迎回來</p>
+            <h1 class="greet-title" id="pageTitle">選擇課程開始學習</h1>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <span class="meta" id="jobLabel">尚未載入課程</span>
+          <button type="button" class="pill-btn" id="btnNewUpload">新增分析</button>
+        </div>
+      </header>
+
+      <section class="view" id="viewHome">
+        <div class="upload-card hidden" id="uploadPanel">
+          <div class="upload-card-copy">
+            <h3>上傳專案 ZIP</h3>
+            <p>產生課綱、每日教材與測驗；完成後會出現在下方課程列表與最近學習。</p>
+          </div>
+          <form id="form" class="upload-form">
+            <label for="file">專案 ZIP</label>
+            <input id="file" name="file" type="file" accept=".zip,application/zip" />
+            <label for="days">學習天數</label>
+            <input id="days" name="days" type="number" min="1" max="30" value="5" />
+            <button type="submit" class="full" id="submit">開始交接分析</button>
+          </form>
+          <div class="job-status">
+            <span class="badge" id="badge">idle</span>
+            <div class="bar"><span id="jobBar"></span></div>
+            <p class="msg" id="message">等待上傳…</p>
+            <p class="err" id="error"></p>
+          </div>
+        </div>
+
+        <div class="courses-band">
+          <div class="section-head light">
+            <h2>你的課程</h2>
+            <span class="meta light">點選卡片繼續</span>
+          </div>
+          <div class="course-row" id="courseCards"></div>
+          <p class="empty-hint" id="courseEmpty">尚無課程。點右上角「新增分析」上傳專案 ZIP。</p>
+        </div>
+      </section>
+
+      <section class="view hidden" id="viewLearn">
+        <div class="learn-layout">
+          <aside class="day-rail widget">
+            <div class="section-head">
+              <h2>每日課程</h2>
+              <span class="meta">點選進入</span>
+            </div>
+            <ul class="days" id="dayList"></ul>
+            <p class="empty-hint" id="dayEmpty">請先從課程首頁開啟一個計畫。</p>
+            <div class="lesson-milestones">
+              <button type="button" class="ghost full hidden" id="btnMid" disabled>交接期中查核</button>
+              <button type="button" class="ghost full hidden mt-sm" id="btnFinal" disabled>上手驗收</button>
+            </div>
+          </aside>
+          <div class="widget learn-widget" id="learnPanel">
+            <div id="dayView"><p class="empty-hint">選擇左側某一天開始閱讀。</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="view hidden" id="viewGaps">
+        <div class="widget gaps-panel">
+          <div class="section-head">
+            <h2>交接缺口</h2>
+            <span class="meta" id="gapsSummary">尚未載入</span>
+          </div>
+          <p class="empty-hint" id="gapsEmpty">開啟計畫後，這裡會列出覆蓋／結構缺漏與文件矛盾，並附可能疑問。</p>
+          <ul class="gap-list" id="gapsList"></ul>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div class="fab-assistant" id="fabAssistant">
+    <div class="chat-panel hidden" id="chatPanel" role="dialog" aria-label="學習小助手">
+      <div class="chat-head">
+        <strong>學習小助手</strong>
+        <button type="button" class="chat-close" id="btnCloseChat" aria-label="關閉">×</button>
+      </div>
+      <div class="assistant-log" id="assistantLog" aria-live="polite"></div>
+      <form class="assistant-form" id="assistantForm">
+        <input id="assistantQ" type="text" placeholder="問這專案／今日主題…" autocomplete="off" maxlength="200" />
+        <button type="submit" id="assistantSend">送出</button>
+      </form>
+      <p class="err" id="assistantError"></p>
+    </div>
+    <button type="button" class="fab-btn" id="btnFabChat" aria-label="開啟學習小助手" title="學習小助手">
+      <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+        <path fill="currentColor" d="M12 2a2 2 0 0 1 2 2v1h2.5A2.5 2.5 0 0 1 19 7.5V11h1a1 1 0 1 1 0 2h-1v2.5A2.5 2.5 0 0 1 16.5 18H15v1a2 2 0 1 1-4 0v-1H9.5A2.5 2.5 0 0 1 7 15.5V13H6a1 1 0 1 1 0-2h1V7.5A2.5 2.5 0 0 1 9.5 5H12V4a2 2 0 0 1 2-2zm-3.5 8.25a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zm7 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5zM9 15.2c.7.7 1.8 1.1 3 1.1s2.3-.4 3-1.1c.2-.2.2-.5 0-.7-.2-.2-.5-.2-.7 0-.5.5-1.3.8-2.3.8s-1.8-.3-2.3-.8c-.2-.2-.5-.2-.7 0-.2.2-.2.5 0 .7z"/>
+      </svg>
+    </button>
+  </div>
+
+  <script src="/static/app.js?v=20260912a" defer></script>
+</body>
+</html>

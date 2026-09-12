@@ -1,0 +1,42 @@
+[project]
+name = "handover-learning-pack-backend"
+version = "0.1.0"
+description = "Handover learning pack backend API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic-settings",
+    "httpx",
+    "python-multipart",
+    "openai",
+    "langgraph",
+    "fpdf2",
+    "numpy",
+    "networkx",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+embed = [
+    "sentence-transformers",
+]
+assistant = [
+    # Python 3.14: install with --no-deps then pip install neo4j nano-vectordb hnswlib future tenacity networkx
+    # graspologic is skipped; app.services.nano_graphrag_patch uses networkx Louvain instead.
+    "nano-graphrag",
+    "neo4j",
+    "nano-vectordb",
+    "hnswlib",
+    "future",
+    "tenacity",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
