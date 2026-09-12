@@ -176,6 +176,12 @@ def _embedding_dim(settings: Settings) -> int:
     return 1536
 
 
+def _uses_max_completion_tokens(model: str) -> bool:
+    """Newer OpenAI reasoning models reject the legacy max_tokens field."""
+    name = (model or "").strip().lower()
+    return name.startswith(("gpt-5", "o1", "o3", "o4"))
+
+
 def _build_llm_funcs(settings: Settings):
     from nano_graphrag._utils import wrap_embedding_func_with_attrs
 
@@ -188,9 +194,6 @@ def _build_llm_funcs(settings: Settings):
     emb_backend = (settings.embedding_backend or "fake").lower()
     dim = _embedding_dim(settings)
 
-    chat_client = AsyncOpenAI(api_key=api_key, base_url=base_url)
-    emb_client = AsyncOpenAI(api_key=emb_key, base_url=emb_base)
-
     async def _complete(prompt, system_prompt=None, history_messages=None, **kwargs):
         history_messages = history_messages or []
         kwargs.pop("hashing_kv", None)
@@ -201,12 +204,24 @@ def _build_llm_funcs(settings: Settings):
         messages.append({"role": "user", "content": prompt})
         # Some hosts reject response_format
         kwargs.pop("response_format", None)
-        resp = await chat_client.chat.completions.create(
-            model=model,
-            messages=messages,
-            temperature=0.2,
-            **kwargs,
-        )
+        requested_max = kwargs.pop("max_tokens", None)
+        if requested_max is not None:
+            token_field = (
+                "max_completion_tokens"
+                if _uses_max_completion_tokens(model)
+                else "max_tokens"
+            )
+            kwargs[token_field] = requested_max
+        # GraphRAG's sync wrapper may run insert and query on different event
+        # loops/threads. AsyncOpenAI owns loop-bound httpx primitives, so never
+        # reuse one client across calls.
+        async with AsyncOpenAI(api_key=api_key, base_url=base_url) as chat_client:
+            resp = await chat_client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.2,
+                **kwargs,
+            )
         return resp.choices[0].message.content or ""
 
     @wrap_embedding_func_with_attrs(embedding_dim=dim, max_token_size=8192)
@@ -217,10 +232,14 @@ def _build_llm_funcs(settings: Settings):
             vecs = embed_local(texts, emb_model)
             return np.array(vecs, dtype=float)
         vectors = []
-        for batch in iter_embedding_batches(texts):
-            resp = await emb_client.embeddings.create(model=emb_model, input=batch)
-            data = sorted(resp.data, key=lambda d: d.index)
-            vectors.extend(list(d.embedding) for d in data)
+        async with AsyncOpenAI(api_key=emb_key, base_url=emb_base) as emb_client:
+            for batch in iter_embedding_batches(texts):
+                resp = await emb_client.embeddings.create(
+                    model=emb_model,
+                    input=batch,
+                )
+                data = sorted(resp.data, key=lambda d: d.index)
+                vectors.extend(list(d.embedding) for d in data)
         result = np.array(vectors, dtype=float)
         if result.ndim != 2 or result.shape[1] != dim:
             actual = result.shape[1] if result.ndim == 2 else "invalid"
@@ -324,6 +343,16 @@ def _reset_nano_index(work_dir: Path) -> None:
         shutil.rmtree(directory)
 
 
+def _has_incomplete_nano_index(work_dir: Path) -> bool:
+    directory = nano_dir(work_dir)
+    if not directory.is_dir() or ready_marker(work_dir).is_file():
+        return False
+    try:
+        return any(directory.iterdir())
+    except OSError:
+        return True
+
+
 def _insert_graph_index(work_dir: Path, settings: Settings, docs: list[str]):
     rag = _make_graph_rag(work_dir, settings)
     rag.insert(docs)
@@ -345,6 +374,9 @@ def ensure_assistant_index(work_dir: Path, settings: Settings | None = None) -> 
                 work_dir,
                 ", ".join(path.name for path in broken),
             )
+            _reset_nano_index(work_dir)
+        elif _has_incomplete_nano_index(work_dir):
+            logger.warning("resetting incomplete assistant index for %s", work_dir)
             _reset_nano_index(work_dir)
         if settings.use_fake_llm or not settings.openai_api_key:
             # Fake mode skips nano index; chroma already exists from pipeline.

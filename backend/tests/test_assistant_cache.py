@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,9 +17,11 @@ from app.services.learning.assistant import (
     QUERY_MAX_TOKEN_LOCAL_CONTEXT,
     QUERY_MAX_TOKEN_TEXT_UNIT,
     QUERY_TOP_K,
+    _build_llm_funcs,
     _corrupt_vdb_files,
     _embedding_dim,
     _get_cached_rag,
+    _uses_max_completion_tokens,
     ask_assistant,
     clear_rag_cache,
     ensure_assistant_index,
@@ -39,6 +43,42 @@ def test_embedding_dimensions_match_openai_models():
         )
         == 1536
     )
+
+
+def test_gpt5_uses_max_completion_tokens(monkeypatch):
+    calls: list[dict] = []
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            calls.append(kwargs)
+            message = SimpleNamespace(content="ok")
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class FakeAsyncOpenAI:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(assistant_mod, "AsyncOpenAI", FakeAsyncOpenAI)
+    settings = Settings(
+        openai_api_key="test-key",
+        openai_model="gpt-5.4-mini",
+        embedding_backend="openai",
+        embedding_api_key="test-key",
+    )
+    complete, _ = _build_llm_funcs(settings)
+
+    assert asyncio.run(complete("prompt", max_tokens=321)) == "ok"
+    assert asyncio.run(complete("second loop", max_tokens=123)) == "ok"
+    assert _uses_max_completion_tokens(settings.openai_model)
+    assert calls[0]["max_completion_tokens"] == 321
+    assert calls[1]["max_completion_tokens"] == 123
+    assert "max_tokens" not in calls[0]
     assert (
         _embedding_dim(
             Settings(embedding_backend="openai", embedding_model="text-embedding-3-large")
