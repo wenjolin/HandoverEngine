@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from pathlib import Path
 
 import uuid
@@ -22,7 +23,11 @@ from app.models.schemas import (
     QuizItem,
     QuizSubmitRequest,
 )
-from app.services.learning.assistant import MAX_QUESTION_CHARS, ask_assistant
+from app.services.learning.assistant import (
+    MAX_QUESTION_CHARS,
+    AssistantRequestError,
+    ask_assistant,
+)
 from app.services.learning.store import (
     load_day_package,
     load_handover_gaps,
@@ -41,6 +46,8 @@ from app.services.learning.pdf_export import (
 from app.services.learning.quiz_utils import answers_match, normalize_day_key
 from app.services.rate_limit import SlidingWindowRateLimiter
 from app.services.secrets_filter import is_ignored_path, is_secret_path
+
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/plans", tags=["plans"])
 
 # 每個計畫：60 秒內最多 20 次小助手提問（防刷費用）
@@ -419,8 +426,14 @@ def post_assistant(plan_id: str, body: AssistantAskRequest) -> AssistantAskRespo
         )
     try:
         result = ask_assistant(work, question, day=body.day)
-    except ValueError as exc:
+    except AssistantRequestError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("assistant GraphRAG failed after rebuild: %s", plan_id)
+        raise HTTPException(
+            status_code=500,
+            detail="小助手索引建立失敗，已嘗試自動重建，請稍後再試",
+        ) from exc
     return AssistantAskResponse(
         answer=result["answer"],
         mode=result.get("mode", "local"),

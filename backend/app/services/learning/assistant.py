@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
+import shutil
 import threading
 from pathlib import Path
 
@@ -22,6 +25,10 @@ from app.services.secrets_filter import is_ignored_path, is_secret_path
 from app.services.stdio_utf8 import ensure_utf8_stdio
 
 logger = logging.getLogger(__name__)
+
+
+class AssistantRequestError(ValueError):
+    """Invalid assistant input supplied by the caller."""
 
 _index_locks_guard = threading.Lock()
 _index_locks: dict[str, threading.Lock] = {}
@@ -155,8 +162,13 @@ def _embedding_dim(settings: Settings) -> int:
     backend = (settings.embedding_backend or "").lower()
     if backend == "local":
         return 512
-    # OpenRouter LFM2.5-Embedding-350M → 1024; OpenAI text-embedding-3-small → 1536
+    # GraphRAG allocates its matrix before the first API response, so this must
+    # match the provider's actual output size.
     model = (settings.embedding_model or "").lower()
+    if "text-embedding-3-large" in model:
+        return 3072
+    if "text-embedding-3-small" in model or "text-embedding-ada-002" in model:
+        return 1536
     if "lfm" in model or "350m" in model:
         return 1024
     if "bge" in model:
@@ -209,7 +221,14 @@ def _build_llm_funcs(settings: Settings):
             resp = await emb_client.embeddings.create(model=emb_model, input=batch)
             data = sorted(resp.data, key=lambda d: d.index)
             vectors.extend(list(d.embedding) for d in data)
-        return np.array(vectors, dtype=float)
+        result = np.array(vectors, dtype=float)
+        if result.ndim != 2 or result.shape[1] != dim:
+            actual = result.shape[1] if result.ndim == 2 else "invalid"
+            raise RuntimeError(
+                f"Embedding 維度不符：模型 {emb_model!r} 回傳 {actual} 維，"
+                f"GraphRAG 設定為 {dim} 維"
+            )
+        return result
 
     return _complete, _embed
 
@@ -273,14 +292,60 @@ def clear_rag_cache(work_dir: Path | None = None) -> None:
         _rag_cache.pop(str(work_dir.resolve()), None)
 
 
+def _corrupt_vdb_files(work_dir: Path) -> list[Path]:
+    """Return nano-vectordb files whose rows and vector matrix disagree."""
+    broken: list[Path] = []
+    directory = nano_dir(work_dir)
+    if not directory.is_dir():
+        return broken
+    for path in directory.glob("vdb_*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            rows = payload.get("data") or []
+            dim = int(payload.get("embedding_dim") or 0)
+            matrix = payload.get("matrix")
+            if not isinstance(matrix, str) or dim <= 0:
+                broken.append(path)
+                continue
+            # nano-vectordb 0.0.4.x serializes a float32 ndarray as base64.
+            vector_count = len(base64.b64decode(matrix, validate=True)) // 4
+            if vector_count != len(rows) * dim:
+                broken.append(path)
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            broken.append(path)
+    return broken
+
+
+def _reset_nano_index(work_dir: Path) -> None:
+    """Remove only the derived GraphRAG cache; original project data is untouched."""
+    clear_rag_cache(work_dir)
+    directory = nano_dir(work_dir)
+    if directory.is_dir():
+        shutil.rmtree(directory)
+
+
+def _insert_graph_index(work_dir: Path, settings: Settings, docs: list[str]):
+    rag = _make_graph_rag(work_dir, settings)
+    rag.insert(docs)
+    return rag
+
+
 def ensure_assistant_index(work_dir: Path, settings: Settings | None = None) -> Path:
     settings = settings or get_settings()
     # nano-graphrag prints Braille progress ticks; Windows cp950 would crash.
     ensure_utf8_stdio()
     marker = ready_marker(work_dir)
     with _index_lock(work_dir):
-        if marker.is_file():
+        broken = _corrupt_vdb_files(work_dir)
+        if marker.is_file() and not broken:
             return nano_dir(work_dir)
+        if broken:
+            logger.warning(
+                "resetting corrupt assistant index for %s: %s",
+                work_dir,
+                ", ".join(path.name for path in broken),
+            )
+            _reset_nano_index(work_dir)
         if settings.use_fake_llm or not settings.openai_api_key:
             # Fake mode skips nano index; chroma already exists from pipeline.
             nano_dir(work_dir).mkdir(parents=True, exist_ok=True)
@@ -288,8 +353,15 @@ def ensure_assistant_index(work_dir: Path, settings: Settings | None = None) -> 
             return nano_dir(work_dir)
 
         docs = collect_corpus(work_dir)
-        rag = _make_graph_rag(work_dir, settings)
-        rag.insert(docs)
+        try:
+            rag = _insert_graph_index(work_dir, settings, docs)
+        except IndexError:
+            # nano-vectordb raises IndexError when persisted metadata has more
+            # rows than its matrix. Rebuild the derived cache once.
+            logger.exception("assistant vector index inconsistent; rebuilding once")
+            _reset_nano_index(work_dir)
+            rag = _insert_graph_index(work_dir, settings, docs)
+        nano_dir(work_dir).mkdir(parents=True, exist_ok=True)
         marker.write_text("ready", encoding="utf-8")
         _cache_rag(work_dir, rag)
         return nano_dir(work_dir)
@@ -363,9 +435,9 @@ def ask_assistant(
     settings = settings or get_settings()
     q = (question or "").strip()
     if not q:
-        raise ValueError("問題不可為空")
+        raise AssistantRequestError("問題不可為空")
     if len(q) > _MAX_QUESTION_CHARS:
-        raise ValueError(f"問題請控制在 {_MAX_QUESTION_CHARS} 字以內")
+        raise AssistantRequestError(f"問題請控制在 {_MAX_QUESTION_CHARS} 字以內")
 
     ensure_assistant_index(work_dir, settings)
 

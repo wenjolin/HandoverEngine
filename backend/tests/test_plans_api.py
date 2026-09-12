@@ -280,6 +280,28 @@ def test_assistant_fake_mode(client, sample_zip_bytes, monkeypatch):
     assert too_long.status_code == 422 or too_long.status_code == 400
 
 
+def test_assistant_returns_500_when_graph_rebuild_still_fails(
+    client, sample_zip_bytes, monkeypatch
+):
+    c, settings, repo = client
+    files = {"file": ("demo.zip", sample_zip_bytes, "application/zip")}
+    created = c.post("/api/jobs", data={"days": "3"}, files=files)
+    job_id = created.json()["job_id"]
+    run_job(job_id, settings=settings, repo=repo)
+
+    def fail_graph(*_args, **_kwargs):
+        raise IndexError("matrix is still inconsistent")
+
+    monkeypatch.setattr("app.api.plans.ask_assistant", fail_graph)
+    response = c.post(
+        f"/api/plans/{job_id}/assistant",
+        json={"question": "這個專案怎麼啟動？"},
+    )
+
+    assert response.status_code == 500
+    assert "已嘗試自動重建" in response.json()["detail"]
+
+
 def test_assistant_rate_limit(client, sample_zip_bytes, monkeypatch):
     c, settings, repo = client
     monkeypatch.setattr("app.services.learning.assistant.get_settings", lambda: settings)
