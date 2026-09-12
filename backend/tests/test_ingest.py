@@ -23,6 +23,9 @@ def test_ingest_writes_file_tree_and_skips_ignored(tmp_path: Path):
             "README.md": "# sample",
             "src/app.py": "print('hi')\n",
             "node_modules/pkg/index.js": "ignored",
+            ".venv/lib/site.py": "ignored",
+            "venv/lib/site.py": "ignored",
+            "env/lib/site.py": "ignored",
             ".env": "SECRET=1",
         },
     )
@@ -40,6 +43,9 @@ def test_ingest_writes_file_tree_and_skips_ignored(tmp_path: Path):
     assert "README.md" in paths
     assert "src/app.py" in paths
     assert not any(p.startswith("node_modules/") for p in paths)
+    assert not any(p.startswith(".venv/") for p in paths)
+    assert not any(p.startswith("venv/") for p in paths)
+    assert not any(p.startswith("env/") for p in paths)
     assert ".env" not in paths
     assert result["file_count"] >= 2
 

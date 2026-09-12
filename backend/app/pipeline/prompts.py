@@ -277,7 +277,7 @@ PLAN_SYSTEM = """
       "objectives": ["string"],
       "card_ids": ["id"],
       "reads": ["path"],
-      "pass_score": 0.6
+      "pass_score": 1.0
     }
   ]
 }
@@ -358,6 +358,7 @@ QUIZ_SMITH_SYSTEM = """
 - 交接期中查核（midterm）≥ 10 題
 - 上手驗收（final）≥ 20 題
 - 每題必須有 answer；mcq 必須有 choices（含正確答案）
+- 正解與干擾選項都要以完整文字提供；不要用固定 A 作為正解標記
 - citations.path 只能來自提供的 cards／day packages
 
 【輸出】

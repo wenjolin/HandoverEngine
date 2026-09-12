@@ -10,6 +10,15 @@ from app.api import jobs as jobs_api
 from app.config import Settings
 from app.main import app
 from app.pipeline.runner import run_job
+from app.services.learning.pdf_export import handover_gaps_to_questions_markdown
+
+
+def _fake_choice_letters(items: list[dict]) -> dict[str, str]:
+    """FakeLLM's correct option is textually 正確敘述, but its position varies."""
+    return {
+        item["id"]: chr(ord("A") + item["choices"].index("正確敘述"))
+        for item in items
+    }
 
 
 @pytest.fixture()
@@ -73,8 +82,8 @@ def test_plans_day_quiz_and_progress(client, sample_zip_bytes):
     assert len(items) >= 3
     assert "answer" not in items[0]
 
-    answers = {q["id"]: q["choices"][0] for q in items}
-    # FakeLLM answer is always 正確敘述 which is choices[0]
+    answers = _fake_choice_letters(items)
+    # FakeLLM answer is always 正確敘述, but its position is deliberately varied.
     sub = c.post(
         f"/api/plans/{job_id}/quizzes/submit",
         json={"scope": "day", "day": 2, "answers": answers},
@@ -84,6 +93,11 @@ def test_plans_day_quiz_and_progress(client, sample_zip_bytes):
     assert out["result"]["passed"] is True
     assert out["progress"]["day_status"]["2"] == "passed"
     assert out["progress"]["percent_complete"] > 0
+
+    review = c.get(f"/api/plans/{job_id}/quizzes/day/2")
+    assert review.status_code == 200
+    assert review.json()["review_mode"] is True
+    assert review.json()["items"][0]["answer"]
 
     gaps = c.get(f"/api/plans/{job_id}/gaps")
     assert gaps.status_code == 200
@@ -113,14 +127,51 @@ def test_submit_accepts_letter_answer(client, sample_zip_bytes):
     run_job(job_id, settings=settings, repo=repo)
 
     quiz = c.get(f"/api/plans/{job_id}/quizzes/day/1").json()["items"]
+    partial = c.post(
+        f"/api/plans/{job_id}/quizzes/submit",
+        json={"scope": "day", "day": 1, "answers": {quiz[0]["id"]: "A"}},
+    )
+    assert partial.status_code == 200
+    assert partial.json()["result"]["score"] < 1
+    assert partial.json()["result"]["passed"] is False
+
     # send letter A for each mcq (canonical first choice)
-    answers = {q["id"]: "A" for q in quiz}
+    answers = _fake_choice_letters(quiz)
     sub = c.post(
         f"/api/plans/{job_id}/quizzes/submit",
         json={"scope": "day", "day": 1, "answers": answers},
     )
     assert sub.status_code == 200
     assert sub.json()["result"]["passed"] is True
+
+    for day in (2, 3):
+        day_items = c.get(f"/api/plans/{job_id}/quizzes/day/{day}").json()["items"]
+        day_sub = c.post(
+            f"/api/plans/{job_id}/quizzes/submit",
+            json={"scope": "day", "day": day, "answers": _fake_choice_letters(day_items)},
+        )
+        assert day_sub.status_code == 200
+        assert day_sub.json()["result"]["passed"] is True
+
+    midterm = c.get(f"/api/plans/{job_id}/quizzes/midterm")
+    assert midterm.status_code == 200
+    midterm_answers = _fake_choice_letters(midterm.json()["items"])
+    midterm_sub = c.post(f"/api/plans/{job_id}/quizzes/submit", json={"scope": "midterm", "answers": midterm_answers})
+    assert midterm_sub.status_code == 200
+    assert midterm_sub.json()["result"]["passed"] is True
+    midterm_review = c.get(f"/api/plans/{job_id}/quizzes/midterm")
+    assert midterm_review.json()["review_mode"] is True
+    assert midterm_review.json()["items"][0]["answer"]
+
+    final = c.get(f"/api/plans/{job_id}/quizzes/final")
+    assert final.status_code == 200
+    final_answers = _fake_choice_letters(final.json()["items"])
+    final_sub = c.post(f"/api/plans/{job_id}/quizzes/submit", json={"scope": "final", "answers": final_answers})
+    assert final_sub.status_code == 200
+    assert final_sub.json()["result"]["passed"] is True
+    final_review = c.get(f"/api/plans/{job_id}/quizzes/final")
+    assert final_review.json()["review_mode"] is True
+    assert final_review.json()["items"][0]["answer"]
 
 
 def test_gap_management_and_export(client, sample_zip_bytes):
@@ -151,6 +202,14 @@ def test_gap_management_and_export(client, sample_zip_bytes):
     persisted_after_update = json.loads((work_dir / "artifacts" / "handover_gaps.json").read_text(encoding="utf-8"))
     assert next(g for g in persisted_after_update["gaps"] if g["id"] == manual["id"])["status"] == "resolved"
 
+    confirmed_created = c.post(
+        f"/api/plans/{job_id}/gaps",
+        json={"title": "待前任確認的設定", "question": "這個設定值可以調整嗎？", "status": "confirmed"},
+    )
+    assert confirmed_created.status_code == 201
+    confirmed_gap = next(g for g in confirmed_created.json()["gaps"] if g["title"] == "待前任確認的設定")
+    assert confirmed_gap["status"] == "confirmed"
+
     missing = c.patch(f"/api/plans/{job_id}/gaps/missing-gap", json={"status": "resolved"})
     assert missing.status_code == 404
 
@@ -170,6 +229,24 @@ def test_gap_management_and_export(client, sample_zip_bytes):
     assert "handover-gaps-questions.pdf" in exported_pdf.headers["content-disposition"]
     assert exported_pdf.content.startswith(b"%PDF")
     assert len(exported_pdf.content) > 800
+
+    selected_pdf = c.get(
+        f"/api/plans/{job_id}/gaps/export/pdf?status=all&ids={manual['id']},{confirmed_gap['id']}"
+    )
+    assert selected_pdf.status_code == 200
+    assert selected_pdf.content.startswith(b"%PDF")
+
+    markdown = handover_gaps_to_questions_markdown(
+        [
+            {"id": "a", "status": "resolved", "kind": "manual", "title": "已解決", "question": "完成了嗎？"},
+            {"id": "b", "status": "confirmed", "kind": "coverage", "title": "確認中", "question": "請確認。"},
+            {"id": "c", "status": "unresolved", "kind": "structure", "title": "未解決", "question": "怎麼做？"},
+        ]
+    )
+    assert "## 未解決（1 項）" in markdown
+    assert "## 確認中（1 項）" in markdown
+    assert "## 已解決（1 項）" in markdown
+    assert markdown.index("未解決（1 項）") < markdown.index("確認中（1 項）") < markdown.index("已解決（1 項）")
 
 
 def test_assistant_fake_mode(client, sample_zip_bytes, monkeypatch):

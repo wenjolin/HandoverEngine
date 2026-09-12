@@ -293,7 +293,7 @@ class FakeLLMClient:
                         "objectives": [f"Day{i} 任務"],
                         "card_ids": ["p1"],
                         "reads": ["README.md"],
-                        "pass_score": 0.6,
+                        "pass_score": 1.0,
                     }
                     for i in range(1, days + 1)
                 ],

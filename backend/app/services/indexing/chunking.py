@@ -64,10 +64,35 @@ def _length_chunks(
     n = len(lines)
 
     while start_idx < n:
+        # A minified or generated file can contain a single line far larger than
+        # the normal budget. Split it explicitly so it cannot become one giant
+        # remote embedding input. Each fragment still points at that source line.
+        if len(lines[start_idx]) > max_chars:
+            line = lines[start_idx]
+            for offset in range(0, len(line), max_chars):
+                piece = line[offset : offset + max_chars]
+                if piece.strip():
+                    line_no = line_offset + start_idx + 1
+                    chunks.append(
+                        {
+                            "id": f"{rel}::{chunk_i}",
+                            "path": rel,
+                            "module": module,
+                            "start_line": line_no,
+                            "end_line": line_no,
+                            "text": piece,
+                        }
+                    )
+                    chunk_i += 1
+            start_idx += 1
+            continue
+
         buf: list[str] = []
         char_count = 0
         end_idx = start_idx
         while end_idx < n and char_count < max_chars:
+            if len(lines[end_idx]) > max_chars:
+                break
             buf.append(lines[end_idx])
             char_count += len(lines[end_idx])
             end_idx += 1
@@ -90,6 +115,10 @@ def _length_chunks(
 
         if end_idx >= n:
             break
+
+        if end_idx == start_idx:
+            # The oversized line is handled at the top of the next loop.
+            continue
 
         overlap_chars = 0
         new_start = end_idx - 1

@@ -1,7 +1,8 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from app.services.indexing.chunking import chunk_file
-from app.services.indexing.chroma_store import ChromaStore
+from app.services.indexing.chroma_store import ChromaStore, iter_embedding_batches
 
 
 def test_chunk_file_assigns_line_ranges(tmp_path: Path):
@@ -68,6 +69,17 @@ def test_chunk_oversized_unit_falls_back_to_length(tmp_path: Path):
     assert all(len(c["text"]) <= 120 + 50 for c in chunks)  # 允許單行略超
 
 
+def test_chunk_single_very_long_line_never_exceeds_budget(tmp_path: Path):
+    p = tmp_path / "minified.js"
+    p.write_text("x" * 2_000, encoding="utf-8")
+
+    chunks = chunk_file(p, "minified.js", max_chars=120, overlap=20)
+
+    assert len(chunks) >= 2
+    assert all(len(chunk["text"]) <= 120 for chunk in chunks)
+    assert all(chunk["start_line"] == 1 and chunk["end_line"] == 1 for chunk in chunks)
+
+
 def test_chroma_store_query_returns_similar_chunk(tmp_path: Path):
     store = ChromaStore(tmp_path / "idx", embedding_backend="fake")
     store.add_chunks(
@@ -91,3 +103,42 @@ def test_chroma_store_query_returns_similar_chunk(tmp_path: Path):
     hits = store.query("docker compose 啟動", k=1)
     assert hits
     assert hits[0]["path"] == "README.md"
+
+
+def test_embedding_batches_stay_within_safe_request_budget():
+    texts = ["x" * 1_000 for _ in range(130)]
+
+    batches = list(iter_embedding_batches(texts))
+
+    assert [len(batch) for batch in batches] == [50, 50, 30]
+    assert [item for batch in batches for item in batch] == texts
+    assert all(sum(len(item) for item in batch) <= 50_000 for batch in batches)
+
+
+def test_openai_embeddings_are_sent_in_multiple_safe_batches(tmp_path: Path, monkeypatch):
+    calls: list[list[str]] = []
+
+    class FakeEmbeddings:
+        def create(self, *, model, input):
+            calls.append(input)
+            return SimpleNamespace(
+                data=[
+                    SimpleNamespace(index=index, embedding=[float(index)])
+                    for index, _ in enumerate(input)
+                ]
+            )
+
+    fake_client = SimpleNamespace(embeddings=FakeEmbeddings())
+    monkeypatch.setattr(
+        "app.services.indexing.chroma_store.OpenAI", lambda **_: fake_client
+    )
+    store = ChromaStore(
+        tmp_path / "idx",
+        embedding_backend="openai",
+        openai_api_key="test-key",
+    )
+
+    vectors = store.embed_texts(["x" * 1_000 for _ in range(130)])
+
+    assert [len(batch) for batch in calls] == [50, 50, 30]
+    assert len(vectors) == 130

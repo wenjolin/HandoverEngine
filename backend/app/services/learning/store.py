@@ -48,13 +48,28 @@ def save_day_package(work_dir: Path, pkg: DayPackage) -> Path:
 
 def load_quiz_bank(work_dir: Path) -> QuizBank:
     path = artifacts_dir(work_dir) / "quiz_bank.json"
-    return QuizBank.model_validate_json(path.read_text(encoding="utf-8"))
+    bank = QuizBank.model_validate_json(path.read_text(encoding="utf-8"))
+    balanced = _balance_quiz_bank(bank)
+    # Migrate existing projects once so previously generated all-A quizzes are fixed.
+    if balanced.model_dump() != bank.model_dump():
+        write_json(path, balanced)
+    return balanced
 
 
 def save_quiz_bank(work_dir: Path, bank: QuizBank) -> Path:
     path = artifacts_dir(work_dir) / "quiz_bank.json"
-    write_json(path, bank)
+    write_json(path, _balance_quiz_bank(bank))
     return path
+
+def _balance_quiz_bank(bank: QuizBank) -> QuizBank:
+    """Normalize and distribute correct MCQ positions across every quiz set."""
+    from app.services.learning.quiz_utils import distribute_mcq_choices
+
+    return QuizBank(
+        day_quizzes={key: distribute_mcq_choices(items) for key, items in bank.day_quizzes.items()},
+        midterm=distribute_mcq_choices(bank.midterm),
+        final=distribute_mcq_choices(bank.final),
+    )
 
 
 def load_progress(work_dir: Path) -> Progress:

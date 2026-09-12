@@ -4,7 +4,7 @@ const MAX_RECENT = 20;
 const ST_LABEL = {
   unread: "未讀",
   reading: "上手中",
-  passed: "已通過查核",
+  passed: "已通過",
   failed: "未通過",
 };
 const VIEW_TITLES = {
@@ -52,11 +52,8 @@ const btnToggleSidebar = document.getElementById("btnToggleSidebar");
 const gapsList = document.getElementById("gapsList");
 const gapsEmpty = document.getElementById("gapsEmpty");
 const gapsSummary = document.getElementById("gapsSummary");
-const gapAddForm = document.getElementById("gapAddForm");
-const gapAddTitle = document.getElementById("gapAddTitle");
-const gapAddQuestion = document.getElementById("gapAddQuestion");
-const btnToggleGapAdd = document.getElementById("btnToggleGapAdd");
 const btnExportGaps = document.getElementById("btnExportGaps");
+const btnToggleGapSelection = document.getElementById("btnToggleGapSelection");
 
 const VIEWS = {
   home: document.getElementById("viewHome"),
@@ -72,6 +69,9 @@ let planData = null;
 let currentDay = 1;
 let pendingMeta = null;
 let currentView = "home";
+let gapSelectionMode = false;
+let selectedGapIds = new Set();
+let draggedGapId = null;
 
 function fmtDetail(detail) {
   if (detail == null) return "";
@@ -205,8 +205,9 @@ function clearActivePlanUi() {
   gapsList.innerHTML = "";
   gapsEmpty.classList.remove("hidden");
   gapsSummary.textContent = "尚未載入";
-  gapAddForm.reset();
-  gapAddForm.classList.add("hidden");
+  gapSelectionMode = false;
+  selectedGapIds.clear();
+  refreshGapActionButtons([]);
   jobLabel.textContent = "尚未載入交接項目";
   const url = new URL(window.location.href);
   url.searchParams.delete("job");
@@ -234,56 +235,186 @@ const GAP_STATUS_LABEL = {
   resolved: "已解決",
 };
 
+const GAP_STATUS_ORDER = ["unresolved", "confirmed", "resolved"];
+
+const GAP_COLUMN_NOTE = {
+  unresolved: "等待確認或需要釐清的問題",
+  confirmed: "正在追蹤、討論或驗證的事項",
+  resolved: "已完成交接或確認無誤的事項",
+};
+
+function gapStatusCounts(gaps) {
+  const counts = { unresolved: 0, confirmed: 0, resolved: 0 };
+  gaps.forEach((gap) => {
+    const status = gap.status || "unresolved";
+    if (status in counts) counts[status] += 1;
+  });
+  return counts;
+}
+
+function refreshGapActionButtons(gaps) {
+  const selected = gaps.filter((gap) => selectedGapIds.has(gap.id));
+  const counts = gapStatusCounts(selected);
+  btnToggleGapSelection.textContent = gapSelectionMode ? "取消選取" : "選取";
+  btnToggleGapSelection.classList.toggle("is-active", gapSelectionMode);
+  if (!gapSelectionMode) {
+    btnExportGaps.textContent = "匯出全部 PDF";
+    btnExportGaps.classList.remove("is-selected-export");
+    return;
+  }
+  btnExportGaps.textContent = `已選取 ${selected.length} 項（含未解決 ${counts.unresolved}・確認中 ${counts.confirmed}・已解決 ${counts.resolved}）・匯出 PDF`;
+  btnExportGaps.classList.add("is-selected-export");
+}
+
+function toggleGapSelection(gapId, checked, gaps) {
+  if (checked) selectedGapIds.add(gapId);
+  else selectedGapIds.delete(gapId);
+  renderGaps({ gaps, summary: { total: gaps.length } });
+}
+
 function renderGaps(report) {
   const gaps = (report && report.gaps) || [];
   const summary = (report && report.summary) || {};
   const total = summary.total != null ? summary.total : gaps.length;
-  const statusCounts = { unresolved: 0, confirmed: 0, resolved: 0 };
-  gaps.forEach((gap) => {
-    const status = gap.status || "unresolved";
-    if (status in statusCounts) statusCounts[status] += 1;
-  });
+  const statusCounts = gapStatusCounts(gaps);
+  const validIds = new Set(gaps.map((gap) => gap.id));
+  selectedGapIds = new Set([...selectedGapIds].filter((id) => validIds.has(id)));
   gapsSummary.textContent = total
     ? `共 ${total} 項（未解決 ${statusCounts.unresolved} · 確認中 ${statusCounts.confirmed} · 已解決 ${statusCounts.resolved}）`
     : "未發現缺漏";
   gapsList.innerHTML = "";
+  refreshGapActionButtons(gaps);
   if (!gaps.length) {
     gapsEmpty.classList.remove("hidden");
     gapsEmpty.textContent = "目前沒有偵測到交接缺口。";
-    return;
+  } else {
+    gapsEmpty.classList.add("hidden");
   }
-  gapsEmpty.classList.add("hidden");
-  for (const g of gaps) {
+
+  const byStatus = Object.fromEntries(GAP_STATUS_ORDER.map((status) => [status, []]));
+  gaps.forEach((gap) => {
+    const status = GAP_STATUS_ORDER.includes(gap.status) ? gap.status : "unresolved";
+    byStatus[status].push(gap);
+  });
+  for (const columnStatus of GAP_STATUS_ORDER) {
+    const column = document.createElement("section");
+    const columnGaps = byStatus[columnStatus];
+    column.className = `gap-column gap-column-${columnStatus}`;
+    const selectedInColumn = columnGaps.filter((gap) => selectedGapIds.has(gap.id)).length;
+    const allSelected = columnGaps.length > 0 && selectedInColumn === columnGaps.length;
+    column.innerHTML = `
+      <div class="gap-column-head">
+        <h3><span class="gap-status-dot" aria-hidden="true"></span>${GAP_STATUS_LABEL[columnStatus]} <span class="gap-count-badge">${columnGaps.length}</span></h3>
+        ${gapSelectionMode ? `<label class="gap-select-all"><input type="checkbox" ${allSelected ? "checked" : ""} ${columnGaps.length ? "" : "disabled"} />全選本欄</label>` : ""}
+      </div>
+      <p class="gap-column-note">${GAP_COLUMN_NOTE[columnStatus]}</p>
+      <ul class="gap-list" aria-label="${GAP_STATUS_LABEL[columnStatus]}交接缺口"></ul>
+      <div class="gap-column-add">
+        <button type="button" class="gap-quick-add" ${gapSelectionMode ? "disabled" : ""}>＋ 新增疑問</button>
+        <form class="gap-column-add-form hidden">
+          <input name="title" maxlength="160" placeholder="缺口標題" required />
+          <input name="question" maxlength="200" placeholder="尚有疑問的交接缺口" required />
+          <div class="gap-column-add-actions"><button type="button" class="ghost gap-add-cancel">取消</button><button type="submit">新增疑問</button></div>
+        </form>
+      </div>
+    `;
+    const list = column.querySelector(".gap-list");
+    const quickAdd = column.querySelector(".gap-quick-add");
+    const addForm = column.querySelector(".gap-column-add-form");
+    if (quickAdd && addForm) {
+      quickAdd.addEventListener("click", () => {
+        quickAdd.classList.add("hidden");
+        addForm.classList.remove("hidden");
+        addForm.elements.title.focus();
+      });
+      addForm.querySelector(".gap-add-cancel").addEventListener("click", () => {
+        addForm.reset();
+        addForm.classList.add("hidden");
+        quickAdd.classList.remove("hidden");
+      });
+      addForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        createManualGap(addForm.elements.title.value, addForm.elements.question.value, columnStatus, addForm);
+      });
+    }
+    const selectAll = column.querySelector(".gap-select-all input");
+    if (selectAll) {
+      selectAll.addEventListener("change", (event) => {
+        columnGaps.forEach((gap) => {
+          if (event.target.checked) selectedGapIds.add(gap.id);
+          else selectedGapIds.delete(gap.id);
+        });
+        renderGaps({ gaps, summary: { total: gaps.length } });
+      });
+    }
+    if (!gapSelectionMode) {
+      column.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        column.classList.add("is-drag-over");
+      });
+      column.addEventListener("dragleave", (event) => {
+        if (!column.contains(event.relatedTarget)) column.classList.remove("is-drag-over");
+      });
+      column.addEventListener("drop", (event) => {
+        event.preventDefault();
+        column.classList.remove("is-drag-over");
+        const gapId = event.dataTransfer.getData("text/plain") || draggedGapId;
+        const gap = gaps.find((item) => item.id === gapId);
+        if (gap && (gap.status || "unresolved") !== columnStatus) {
+          updateGapStatus(gap.id, columnStatus);
+        }
+      });
+    }
+    for (const g of columnGaps) {
     const li = document.createElement("li");
     const status = g.status || "unresolved";
-    li.className = "gap-item" + (status === "resolved" ? " is-resolved" : "");
+    const isSelected = selectedGapIds.has(g.id);
+    li.className = "gap-item" + (status === "resolved" ? " is-resolved" : "") + (isSelected ? " is-selected" : "");
+    li.draggable = !gapSelectionMode;
     const kind = GAP_KIND_LABEL[g.kind] || g.kind || "缺漏";
     const sev = GAP_SEV_LABEL[g.severity] || g.severity || "";
     const sources = (g.sources || []).map((p) => `<code>${escapeHtml(p)}</code>`).join(" ");
-    const statusOpts = Object.entries(GAP_STATUS_LABEL)
-      .map(([v, label]) => `<option value="${v}" ${v === status ? "selected" : ""}>${label}</option>`)
-      .join("");
     li.innerHTML = `
       <div class="gap-head">
+        ${gapSelectionMode ? `<label class="gap-card-check"><input type="checkbox" aria-label="選取：${escapeHtml(g.title || "未命名缺漏")}" ${isSelected ? "checked" : ""} /></label>` : ""}
         <span class="gap-kind">${escapeHtml(kind)}</span>
         ${sev ? `<span class="gap-sev sev-${escapeHtml(g.severity || "medium")}">${escapeHtml(sev)}</span>` : ""}
-        <select class="gap-status-select" data-id="${escapeHtml(g.id)}">${statusOpts}</select>
+        ${gapSelectionMode ? "" : '<span class="gap-drag-handle" title="拖曳至其他狀態" aria-hidden="true">⠿</span>'}
       </div>
       <h3 class="gap-title">${status === "resolved" ? "✓ " : ""}${escapeHtml(g.title || "未命名缺漏")}</h3>
       <p class="gap-detail">${escapeHtml(g.detail || "")}</p>
       ${sources ? `<p class="gap-sources">依據：${sources}</p>` : ""}
       <p class="gap-q"><span class="gap-q-label">可能疑問</span>${escapeHtml(g.question || "")}</p>
     `;
-    const statusSelect = li.querySelector(".gap-status-select");
-    statusSelect.addEventListener("change", (e) => {
-      updateGapStatus(g.id, e.target.value, statusSelect, status);
-    });
-    gapsList.appendChild(li);
+    const check = li.querySelector(".gap-card-check input");
+    if (check) check.addEventListener("change", (event) => toggleGapSelection(g.id, event.target.checked, gaps));
+    if (!gapSelectionMode) {
+      li.addEventListener("dragstart", (event) => {
+        draggedGapId = g.id;
+        event.dataTransfer.setData("text/plain", g.id);
+        event.dataTransfer.effectAllowed = "move";
+        requestAnimationFrame(() => li.classList.add("is-dragging"));
+      });
+      li.addEventListener("dragend", () => {
+        draggedGapId = null;
+        li.classList.remove("is-dragging");
+        document.querySelectorAll(".gap-column.is-drag-over").forEach((item) => item.classList.remove("is-drag-over"));
+      });
+    }
+    list.appendChild(li);
+    }
+    if (!columnGaps.length) {
+      const empty = document.createElement("li");
+      empty.className = "gap-column-empty";
+      empty.textContent = "此欄目前沒有交接缺口。";
+      list.appendChild(empty);
+    }
+    gapsList.appendChild(column);
   }
 }
 
-async function updateGapStatus(gapId, status, select, previous) {
-  select.disabled = true;
+async function updateGapStatus(gapId, status) {
   try {
     const res = await fetch(`/api/plans/${planId}/gaps/${encodeURIComponent(gapId)}`, {
       method: "PATCH",
@@ -296,49 +427,55 @@ async function updateGapStatus(gapId, status, select, previous) {
     }
     renderGaps(data);
   } catch (err) {
-    select.value = previous;
     alert("更新交接缺口狀態失敗：" + err.message);
-  } finally {
-    select.disabled = false;
   }
 }
 
-btnToggleGapAdd.addEventListener("click", () => {
-  gapAddForm.classList.toggle("hidden");
-  if (!gapAddForm.classList.contains("hidden")) gapAddTitle.focus();
-});
-
-gapAddForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
+btnToggleGapSelection.addEventListener("click", () => {
   if (!planId) {
     alert("請先從交接首頁開啟一個交接項目。");
     return;
   }
-  const title = gapAddTitle.value.trim();
-  const question = gapAddQuestion.value.trim();
+  gapSelectionMode = !gapSelectionMode;
+  if (!gapSelectionMode) selectedGapIds.clear();
+  loadGaps(planId);
+});
+
+async function createManualGap(rawTitle, rawQuestion, status, form) {
+  if (!planId) {
+    alert("請先從交接首頁開啟一個交接項目。");
+    return;
+  }
+  const title = rawTitle.trim();
+  const question = rawQuestion.trim();
   if (!title || !question) return;
   try {
     const res = await fetch(`/api/plans/${planId}/gaps`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, question }),
+      body: JSON.stringify({ title, question, status }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(fmtDetail(data.detail) || "新增失敗");
     renderGaps(data);
-    gapAddForm.reset();
-    gapAddForm.classList.add("hidden");
+    if (form) form.reset();
   } catch (err) {
     alert(String(err.message || err));
   }
-});
+}
 
 btnExportGaps.addEventListener("click", () => {
   if (!planId) {
     alert("請先從交接首頁開啟一個交接項目。");
     return;
   }
-  window.location.assign(`/api/plans/${planId}/gaps/export/pdf?status=all`);
+  if (gapSelectionMode && !selectedGapIds.size) {
+    alert("請先選取至少一項交接缺口。");
+    return;
+  }
+  const params = new URLSearchParams({ status: "all" });
+  if (gapSelectionMode) params.set("ids", [...selectedGapIds].join(","));
+  window.location.assign(`/api/plans/${planId}/gaps/export/pdf?${params}`);
 });
 
 async function loadGaps(id) {
@@ -459,10 +596,20 @@ function allDayQuizzesPassed(progress) {
   return true;
 }
 
-function setMilestone(btn, unlocked) {
+function milestoneQuizStatus(progress, scope) {
+  const attempts = (progress.quiz_attempts || []).filter((attempt) => attempt.quiz_key === scope);
+  if (attempts.some((attempt) => attempt.passed)) return "passed";
+  return attempts.length ? "failed" : "unread";
+}
+
+function setMilestone(btn, unlocked, status = "unread") {
   btn.disabled = !unlocked;
   btn.classList.toggle("hidden", !planData);
   btn.classList.toggle("is-locked", !unlocked);
+  btn.classList.toggle("is-passed", status === "passed");
+  btn.classList.toggle("is-failed", status === "failed");
+  const baseLabel = btn === btnMid ? "交接期中查核" : "上手驗收";
+  btn.textContent = status === "passed" ? `${baseLabel} · 已通過` : status === "failed" ? `${baseLabel} · 未通過` : baseLabel;
   if (btn === btnFinal) {
     btn.title = unlocked
       ? "已通過全部每日查核，可進行上手驗收"
@@ -480,11 +627,12 @@ function renderCourseList(progress) {
     b.type = "button";
     const st = (progress.day_status || {})[String(it.day)] || "unread";
     const label = ST_LABEL[st] || st;
+    b.classList.toggle("is-passed", st === "passed");
     b.innerHTML =
       `<span>Day ${it.day}</span>` +
       `<span class="st ${escapeHtml(st)}">${escapeHtml(label)}</span>` +
       `<span class="theme">${escapeHtml(it.theme || "")}</span>` +
-      `<span class="go">${it.day === currentDay ? "進行中 →" : "開始 →"}</span>`;
+      `<span class="go">${st === "passed" ? "已完成" : it.day === currentDay ? "進行中 →" : "開始 →"}</span>`;
     if (it.day === currentDay) b.classList.add("active");
     b.onclick = () => openDay(it.day);
     li.appendChild(b);
@@ -494,9 +642,9 @@ function renderCourseList(progress) {
 
 function renderProgress(progress) {
   const pct = progress.percent_complete != null ? progress.percent_complete : 0;
-  setMilestone(btnMid, !!progress.midterm_unlocked);
+  setMilestone(btnMid, !!progress.midterm_unlocked, milestoneQuizStatus(progress, "midterm"));
   // 前端再以每日通過狀態鎖定，避免舊 progress 殘留 final_unlocked
-  setMilestone(btnFinal, allDayQuizzesPassed(progress));
+  setMilestone(btnFinal, allDayQuizzesPassed(progress), milestoneQuizStatus(progress, "final"));
   renderCourseList(progress);
   renderCourseCards();
   if (planId) {
@@ -549,6 +697,7 @@ async function loadQuiz(scope, day) {
     return;
   }
   const items = data.items || [];
+  const reviewMode = data.review_mode === true;
   const title = scope === "day" ? `Day ${day} 每日查核` : scope === "midterm" ? "交接期中查核" : "上手驗收";
   let html = "";
   if (scope === "day") {
@@ -561,10 +710,14 @@ async function loadQuiz(scope, day) {
     if (back) back.onclick = () => openDay(day);
     return;
   }
-  html += `<form id="quizForm">`;
+  if (reviewMode) html += `<p class="quiz-review-note">本日測驗已通過，以下為題目與正確答案。</p>`;
+  if (!reviewMode) html += `<form id="quizForm">`;
   items.forEach((q, idx) => {
     html += `<div class="quiz-item"><div><strong>${idx + 1}. ${escapeHtml(q.stem)}</strong></div>`;
-    if (q.choices && q.choices.length) {
+    if (reviewMode) {
+      html += `<p class="quiz-answer"><span>正確答案</span>${escapeHtml(q.answer || "")}</p>`;
+      if (q.explanation) html += `<p class="quiz-explanation">${escapeHtml(q.explanation)}</p>`;
+    } else if (q.choices && q.choices.length) {
       q.choices.forEach((ch, ci) => {
         const letter = String.fromCharCode(65 + ci);
         html += `<label><input type="radio" name="${escapeHtml(q.id)}" value="${ci}" data-text="${escapeHtml(ch)}" /> ${letter}. ${escapeHtml(ch)}</label>`;
@@ -574,10 +727,11 @@ async function loadQuiz(scope, day) {
     }
     html += `</div>`;
   });
-  html += `<button type="submit">交卷</button></form><div id="quizResult" class="msg"></div>`;
+  if (!reviewMode) html += `<button type="submit">交卷</button></form><div id="quizResult" class="msg"></div>`;
   dayView.innerHTML = html;
   const back = document.getElementById("btnBackLesson");
   if (back) back.onclick = () => openDay(day);
+  if (reviewMode) return;
   document.getElementById("quizForm").onsubmit = async (e) => {
     e.preventDefault();
     const answers = {};

@@ -6,7 +6,16 @@ import re
 from pathlib import PurePosixPath
 
 _IGNORED_DIR_NAMES = frozenset(
-    {".git", "node_modules", "dist", "build", ".venv", "__pycache__"}
+    {
+        ".git",
+        "node_modules",
+        "dist",
+        "build",
+        ".venv",
+        "venv",
+        "env",
+        "__pycache__",
+    }
 )
 
 _SECRET_NAME_RE = re.compile(

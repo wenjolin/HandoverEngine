@@ -100,7 +100,7 @@ class LearningPlanItem(BaseModel):
     objectives: list[str] = Field(default_factory=list)
     card_ids: list[str] = Field(default_factory=list)
     reads: list[str] = Field(default_factory=list)
-    pass_score: float = 0.6
+    pass_score: float = 1.0
 
 
 class LearningPlan(BaseModel):
@@ -196,6 +196,7 @@ class GapCreateRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=200)
     detail: str = ""
     sources: list[str] = Field(default_factory=list)
+    status: GapStatus = GapStatus.unresolved
 
 
 class QuizSubmitRequest(BaseModel):

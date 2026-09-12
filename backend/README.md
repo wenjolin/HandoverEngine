@@ -150,7 +150,7 @@ Invoke-WebRequest http://127.0.0.1:8000/api/jobs/$jobId/download/pdf -OutFile ha
 ```powershell
 $env:USE_FAKE_LLM="true"
 $env:EMBEDDING_BACKEND="fake"
-.\.venv\Scripts\python.exe -m pytest tests/ -q -k "not local_bge_embed_and_query"
+.\.venv\Scripts\python.exe -m pytest tests/ -q
 ```
 
 這是本專案的離線回歸基準：會完整跑 ingest 至 package 的 pipeline 與 API 測試，不會呼叫外部 LLM 或 embedding API。2026-09-12 的基準結果為 `63 passed, 1 deselected`；被排除的本機 BGE 測試需要先下載模型。

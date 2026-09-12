@@ -60,19 +60,29 @@ def _work_dir(plan_id: str) -> Path:
     return work
 
 
-def _public_items(items: list[QuizItem]) -> list[dict]:
+def _public_items(items: list[QuizItem], *, include_answers: bool = False) -> list[dict]:
     out = []
     for q in items:
-        out.append(
-            {
-                "id": q.id,
-                "type": q.type,
-                "stem": q.stem,
-                "choices": q.choices,
-                "citations": [c.model_dump() for c in q.citations],
-            }
-        )
+        item = {
+            "id": q.id,
+            "type": q.type,
+            "stem": q.stem,
+            "choices": q.choices,
+            "citations": [c.model_dump() for c in q.citations],
+        }
+        if include_answers:
+            item["answer"] = q.answer
+            item["explanation"] = q.explanation
+        out.append(item)
     return out
+
+
+def _quiz_attempt_status(progress, quiz_key: str) -> str:
+    """Return the persistent display state for a milestone quiz."""
+    attempts = [attempt for attempt in progress.quiz_attempts if attempt.quiz_key == quiz_key]
+    if any(attempt.passed for attempt in attempts):
+        return "passed"
+    return "failed" if attempts else "unread"
 
 
 def _grade(items: list[QuizItem], answers: dict[str, str], pass_score: float) -> dict:
@@ -163,7 +173,7 @@ def create_manual_gap(plan_id: str, body: GapCreateRequest) -> dict:
         "detail": body.detail,
         "sources": body.sources[:8],
         "question": body.question,
-        "status": "unresolved",
+        "status": body.status.value,
         "source_type": "manual",
         "created_at": now,
         "updated_at": now,
@@ -201,12 +211,15 @@ def export_gaps(plan_id: str, status: str = "unresolved") -> PlainTextResponse:
 
 
 @router.get("/{plan_id}/gaps/export/pdf")
-def export_gaps_pdf(plan_id: str, status: str = "all") -> FileResponse:
+def export_gaps_pdf(plan_id: str, status: str = "all", ids: str | None = None) -> FileResponse:
     if status not in {"unresolved", "confirmed", "resolved", "all"}:
         raise HTTPException(status_code=422, detail="status 無效")
     work = _work_dir(plan_id)
     gaps = load_handover_gaps(work).get("gaps", [])
-    if status != "all":
+    selected_ids = {gap_id for gap_id in (ids or "").split(",") if gap_id}
+    if selected_ids:
+        gaps = [gap for gap in gaps if str(gap.get("id")) in selected_ids]
+    elif status != "all":
         gaps = [gap for gap in gaps if gap.get("status", "unresolved") == status]
     try:
         pdf_path = export_handover_gaps_pdf(work, gaps)
@@ -289,7 +302,14 @@ def get_day_quiz(plan_id: str, day: int) -> dict:
         raise HTTPException(status_code=404, detail="天數不存在")
     bank = load_quiz_bank(work)
     items = _day_quiz_items(bank, day)
-    return {"scope": "day", "day": day, "items": _public_items(items)}
+    progress = load_progress(work)
+    review_mode = progress.day_status.get(str(day)) == DayProgressStatus.passed
+    return {
+        "scope": "day",
+        "day": day,
+        "review_mode": review_mode,
+        "items": _public_items(items, include_answers=review_mode),
+    }
 
 
 @router.get("/{plan_id}/quizzes/midterm")
@@ -300,7 +320,13 @@ def get_midterm(plan_id: str) -> dict:
     if not progress.midterm_unlocked:
         raise HTTPException(status_code=403, detail="交接期中查核尚未解鎖（學習進度需達 50%）")
     bank = load_quiz_bank(work)
-    return {"scope": "midterm", "items": _public_items(bank.midterm)}
+    attempt_status = _quiz_attempt_status(progress, "midterm")
+    return {
+        "scope": "midterm",
+        "review_mode": attempt_status == "passed",
+        "attempt_status": attempt_status,
+        "items": _public_items(bank.midterm, include_answers=attempt_status == "passed"),
+    }
 
 
 @router.get("/{plan_id}/quizzes/final")
@@ -313,7 +339,13 @@ def get_final(plan_id: str) -> dict:
             status_code=403, detail="上手驗收尚未解鎖（需通過全部每日查核）"
         )
     bank = load_quiz_bank(work)
-    return {"scope": "final", "items": _public_items(bank.final)}
+    attempt_status = _quiz_attempt_status(progress, "final")
+    return {
+        "scope": "final",
+        "review_mode": attempt_status == "passed",
+        "attempt_status": attempt_status,
+        "items": _public_items(bank.final, include_answers=attempt_status == "passed"),
+    }
 
 
 @router.post("/{plan_id}/quizzes/submit")
@@ -327,8 +359,8 @@ def submit_quiz(plan_id: str, body: QuizSubmitRequest) -> dict:
         if body.day is None:
             raise HTTPException(status_code=400, detail="day 必填")
         items = _day_quiz_items(bank, body.day)
-        item = next((x for x in plan.items if x.day == body.day), None)
-        pass_score = item.pass_score if item else 0.6
+        # 每日查核一律需要全對；不受舊 learning_plan.json 的 pass_score 影響。
+        pass_score = 1.0
         quiz_key = f"day:{body.day}"
     elif body.scope == "midterm":
         if not progress.midterm_unlocked:

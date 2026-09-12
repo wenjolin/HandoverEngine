@@ -203,28 +203,40 @@ def markdown_text_to_pdf(
 
 
 def handover_gaps_to_questions_markdown(gaps: list[dict]) -> str:
-    """Format handover gaps as a concise, printable question list."""
+    """Format handover gaps as a concise status-grouped, printable question list."""
     kind_labels = {
         "coverage": "覆蓋",
         "structure": "結構",
         "contradiction": "矛盾",
         "manual": "手動新增",
     }
+    status_labels = {"unresolved": "未解決", "confirmed": "確認中", "resolved": "已解決"}
+    by_status = {status: [] for status in status_labels}
+    for gap in gaps:
+        by_status.get(str(gap.get("status") or "unresolved"), by_status["unresolved"]).append(gap)
+
     lines = [f"# 交接缺口問題清單（{len(gaps)} 項）", ""]
-    for index, gap in enumerate(gaps, start=1):
-        kind = kind_labels.get(str(gap.get("kind") or ""), str(gap.get("kind") or ""))
-        lines.extend(
-            [
-                f"## {index}. [{kind}] {gap.get('title', '')}",
-                "",
-                f"疑問：{gap.get('question', '')}",
-            ]
-        )
-        if gap.get("detail"):
-            lines.append(f"說明：{gap['detail']}")
-        if gap.get("sources"):
-            lines.append(f"依據：{', '.join(str(p) for p in gap['sources'])}")
-        lines.append("")
+    index = 1
+    for status, label in status_labels.items():
+        status_gaps = by_status[status]
+        if not status_gaps:
+            continue
+        lines.extend([f"## {label}（{len(status_gaps)} 項）", ""])
+        for gap in status_gaps:
+            kind = kind_labels.get(str(gap.get("kind") or ""), str(gap.get("kind") or ""))
+            lines.extend(
+                [
+                    f"### {index}. [{kind}] {gap.get('title', '')}",
+                    "",
+                    f"疑問：{gap.get('question', '')}",
+                ]
+            )
+            if gap.get("detail"):
+                lines.append(f"說明：{gap['detail']}")
+            if gap.get("sources"):
+                lines.append(f"依據：{', '.join(str(p) for p in gap['sources'])}")
+            lines.append("")
+            index += 1
     return "\n".join(lines)
 
 

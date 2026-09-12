@@ -33,7 +33,7 @@ def _fallback_plan(days: int, cards: list[dict], language: str) -> LearningPlan:
                 objectives=[f"完成第 {i} 天必讀與檢查清單"],
                 card_ids=[cid] if cid else [],
                 reads=[path],
-                pass_score=0.6,
+                pass_score=1.0,
             )
         )
     return LearningPlan(days=days, midterm_day=mid, language=language, items=items)
@@ -64,7 +64,7 @@ def _normalize_plan(data: dict, days: int, language: str, cards: list[dict]) -> 
                 objectives=[str(x) for x in objectives],
                 card_ids=[str(x) for x in card_ids],
                 reads=[str(x) for x in reads],
-                pass_score=float(row.get("pass_score") or 0.6),
+                pass_score=1.0,
             )
         )
 

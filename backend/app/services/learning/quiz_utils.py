@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import random
 import re
 
 from app.models.schemas import QuizItem
@@ -87,6 +89,44 @@ def normalize_quiz_item(item: QuizItem) -> QuizItem:
     if resolved != item.answer:
         return item.model_copy(update={"answer": resolved})
     return item
+
+
+def distribute_mcq_choices(items: list[QuizItem]) -> list[QuizItem]:
+    """Stably shuffle distractors and balance correct-option positions.
+
+    Question IDs seed the shuffle, so a learner sees a stable quiz after refresh.
+    The index-based insertion prevents an entire generated set from putting every
+    correct answer at option A.
+    """
+    out: list[QuizItem] = []
+    for index, raw_item in enumerate(items):
+        item = normalize_quiz_item(raw_item)
+        choices = list(item.choices or [])
+        answer = resolve_to_choice_text(item.answer, choices)
+        if len(choices) < 2 or not answer:
+            out.append(item)
+            continue
+
+        remaining: list[str] = []
+        removed_answer = False
+        for choice in choices:
+            if not removed_answer and choice.casefold() == answer.casefold():
+                removed_answer = True
+            else:
+                remaining.append(choice)
+        if not removed_answer:
+            out.append(item)
+            continue
+
+        # Sorting first makes the seeded shuffle idempotent for existing banks.
+        remaining.sort(key=str.casefold)
+        seed_bytes = hashlib.blake2s(
+            f"{item.id}\0{item.stem}".encode("utf-8"), digest_size=8
+        ).digest()
+        random.Random(int.from_bytes(seed_bytes, "big")).shuffle(remaining)
+        remaining.insert(index % len(choices), answer)
+        out.append(item.model_copy(update={"choices": remaining, "answer": answer}))
+    return out
 
 
 def answers_match(given: str, item: QuizItem) -> bool:

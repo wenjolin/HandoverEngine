@@ -10,7 +10,11 @@ import numpy as np
 from openai import AsyncOpenAI
 
 from app.config import Settings, get_settings
-from app.services.indexing.chroma_store import ChromaStore, _fake_embed
+from app.services.indexing.chroma_store import (
+    ChromaStore,
+    _fake_embed,
+    iter_embedding_batches,
+)
 from app.services.indexing.embeddings_local import embed_local
 from app.services.learning.nano_graphrag_patch import apply_networkx_clustering_patch
 from app.services.learning.store import load_cards_payload, load_learning_plan
@@ -200,9 +204,12 @@ def _build_llm_funcs(settings: Settings):
         if emb_backend == "local":
             vecs = embed_local(texts, emb_model)
             return np.array(vecs, dtype=float)
-        resp = await emb_client.embeddings.create(model=emb_model, input=texts)
-        data = sorted(resp.data, key=lambda d: d.index)
-        return np.array([list(d.embedding) for d in data], dtype=float)
+        vectors = []
+        for batch in iter_embedding_batches(texts):
+            resp = await emb_client.embeddings.create(model=emb_model, input=batch)
+            data = sorted(resp.data, key=lambda d: d.index)
+            vectors.extend(list(d.embedding) for d in data)
+        return np.array(vectors, dtype=float)
 
     return _complete, _embed
 

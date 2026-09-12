@@ -1,6 +1,7 @@
 from app.models.schemas import Citation, QuizItem
 from app.services.learning.quiz_utils import (
     answers_match,
+    distribute_mcq_choices,
     merge_day_quizzes,
     normalize_day_key,
     normalize_quiz_item,
@@ -42,3 +43,17 @@ def test_answers_match_letter_and_text():
     assert answers_match("A", item)
     assert answers_match("1", item)
     assert not answers_match("錯誤 A", item)
+
+
+def test_distribute_mcq_choices_balances_correct_positions():
+    items = [
+        QuizItem(
+            id=f"q{i}", stem=f"題目 {i}", choices=["正解", "錯誤 A", "錯誤 B", "錯誤 C"],
+            answer="正解", citations=[Citation(path="README.md")],
+        )
+        for i in range(4)
+    ]
+    distributed = distribute_mcq_choices(items)
+    positions = [item.choices.index(item.answer) for item in distributed]
+    assert positions == [0, 1, 2, 3]
+    assert all(answers_match(item.answer, item) for item in distributed)

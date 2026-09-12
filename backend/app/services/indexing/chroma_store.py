@@ -6,13 +6,36 @@ import hashlib
 import json
 import math
 from pathlib import Path
-from typing import Sequence
+from typing import Iterator, Sequence
 
 from openai import OpenAI
 
 from app.services.indexing.embeddings_local import embed_local
 
 _VALID_BACKENDS = frozenset({"fake", "local", "openai"})
+# Keep each remote embedding request comfortably below providers' request-size
+# limits. Chinese and source code can tokenize close to one token per character.
+_MAX_EMBEDDING_BATCH_CHARS = 50_000
+_MAX_EMBEDDING_BATCH_ITEMS = 64
+
+
+def iter_embedding_batches(texts: list[str]) -> Iterator[list[str]]:
+    """Yield conservative remote-embedding batches while preserving order."""
+    batch: list[str] = []
+    char_count = 0
+    for text in texts:
+        size = len(text)
+        if batch and (
+            len(batch) >= _MAX_EMBEDDING_BATCH_ITEMS
+            or char_count + size > _MAX_EMBEDDING_BATCH_CHARS
+        ):
+            yield batch
+            batch = []
+            char_count = 0
+        batch.append(text)
+        char_count += size
+    if batch:
+        yield batch
 
 
 def _fake_embed(text: str, dim: int = 64) -> list[float]:
@@ -74,9 +97,12 @@ class ChromaStore:
         if self.embedding_backend == "local":
             return embed_local(texts, self.embedding_model)
         client = OpenAI(api_key=self.openai_api_key, base_url=self.openai_base_url)
-        resp = client.embeddings.create(model=self.embedding_model, input=texts)
-        data = sorted(resp.data, key=lambda d: d.index)
-        return [list(d.embedding) for d in data]
+        vectors: list[list[float]] = []
+        for batch in iter_embedding_batches(texts):
+            resp = client.embeddings.create(model=self.embedding_model, input=batch)
+            data = sorted(resp.data, key=lambda d: d.index)
+            vectors.extend(list(d.embedding) for d in data)
+        return vectors
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return self._embed_many(texts)

@@ -2,11 +2,22 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from app.services.indexing.chroma_store import ChromaStore
 
 pytest.importorskip("sentence_transformers")
+
+# This smoke test downloads a large Hugging Face model when the cache is empty.
+# Keep the normal fake/offline regression suite deterministic; run it explicitly
+# only on a machine prepared for local embeddings.
+if os.getenv("RUN_LOCAL_EMBED_TESTS") != "1":
+    pytest.skip(
+        "本機 BGE 模型測試預設略過；設定 RUN_LOCAL_EMBED_TESTS=1 才執行。",
+        allow_module_level=True,
+    )
 
 
 def test_local_bge_embed_and_query(tmp_path):
