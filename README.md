@@ -34,7 +34,7 @@ FastAPI：Jobs / Plans API
 ## 專案結構
 
 ```text
-Codebase_2/
+project-root/
 ├── README.md
 ├── backend/
 │   ├── app/
@@ -62,7 +62,7 @@ Codebase_2/
 macOS／zsh：
 
 ```bash
-cd /Users/0yuan_0124/Downloads/Codebase_2/backend
+cd backend
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev,embed,assistant]"
@@ -112,7 +112,7 @@ EMBEDDING_BACKEND=fake
 ## 啟動
 
 ```bash
-cd /Users/0yuan_0124/Downloads/Codebase_2/backend
+cd backend
 .venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
@@ -198,4 +198,3 @@ RUN_LOCAL_EMBED_TESTS=1 .venv/bin/python -m pytest tests/test_local_embed.py -q
 | embedding 請求超過 token 上限 | 使用最新版程式；embedding 已採分批處理。 |
 | PDF 中文亂碼或重疊 | 確認系統中文字型可用；可設定 `HANDOVER_PDF_FONT` 指向可用 TTF/TTC 字型。 |
 | 本機 BGE 測試失敗 | 先下載模型並設定 `RUN_LOCAL_EMBED_TESTS=1`，否則維持預設略過。 |
-
