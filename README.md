@@ -113,14 +113,19 @@ EMBEDDING_BACKEND=fake
 
 ```bash
 cd /Users/0yuan_0124/Downloads/Codebase_2/backend
-USE_FAKE_LLM=true EMBEDDING_BACKEND=fake \
-  .venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+.venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 - 網頁：<http://127.0.0.1:8000/>
 - 健康檢查：<http://127.0.0.1:8000/health>
 
 公開介面不提供 Swagger 文件連結。若 8000 埠已被占用，可改用 `--port 8001`。
+
+以上預設讀取 `.env` 中的線上 chat 與 embedding API 設定。僅在離線驗證時才於指令前加上：
+
+```bash
+USE_FAKE_LLM=true EMBEDDING_BACKEND=fake
+```
 
 ## 使用流程
 
@@ -193,5 +198,4 @@ RUN_LOCAL_EMBED_TESTS=1 .venv/bin/python -m pytest tests/test_local_embed.py -q
 | embedding 請求超過 token 上限 | 使用最新版程式；embedding 已採分批處理。 |
 | PDF 中文亂碼或重疊 | 確認系統中文字型可用；可設定 `HANDOVER_PDF_FONT` 指向可用 TTF/TTC 字型。 |
 | 本機 BGE 測試失敗 | 先下載模型並設定 `RUN_LOCAL_EMBED_TESTS=1`，否則維持預設略過。 |
-
 
