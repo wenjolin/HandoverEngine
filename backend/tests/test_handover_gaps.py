@@ -12,6 +12,7 @@ from app.pipeline.nodes.handover_gaps import run_handover_gaps
 from app.pipeline.nodes.index import run_index
 from app.pipeline.nodes.ingest import run_ingest
 from app.pipeline.nodes.extract import run_extract
+from app.services.learning.store import load_handover_gaps
 
 
 def test_handover_gaps_writes_report(tmp_path: Path):
@@ -69,9 +70,56 @@ def test_handover_gaps_writes_report(tmp_path: Path):
     out = work / "artifacts" / "handover_gaps.json"
     assert out.is_file()
     assert report["summary"]["total"] >= 1
+    assert set(report["summary"]) == {
+        "total",
+        "coverage",
+        "structure",
+        "contradiction",
+        "manual",
+    }
     kinds = {g["kind"] for g in report["gaps"]}
     assert "coverage" in kinds
     assert "contradiction" in kinds
     for g in report["gaps"]:
         assert g.get("question")
         assert g.get("title")
+        assert g["status"] == "unresolved"
+        assert g["source_type"] == "auto"
+
+
+def test_load_handover_gaps_upgrades_legacy_report(tmp_path: Path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "handover_gaps.json").write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-01-01T00:00:00Z",
+                "summary": {"total": 1},
+                "gaps": [
+                    {
+                        "id": "legacy-1",
+                        "kind": "coverage",
+                        "severity": "medium",
+                        "title": "舊缺口",
+                        "detail": "",
+                        "sources": [],
+                        "question": "需要確認什麼？",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = load_handover_gaps(tmp_path)
+
+    assert report["summary"] == {
+        "total": 1,
+        "coverage": 0,
+        "structure": 0,
+        "contradiction": 0,
+        "manual": 0,
+    }
+    assert report["gaps"][0]["status"] == "unresolved"
+    assert report["gaps"][0]["source_type"] == "auto"

@@ -134,7 +134,7 @@ class FakeLLMClient:
                 ]
             }
 
-        if "出題" in blob or "小測" in blob or "day_quizzes" in blob:
+        if "出題" in blob or "每日查核" in blob or "day_quizzes" in blob:
             day_quizzes = {
                 str(i): [_mcq(f"d{i}-q{j}", f"Day{i} 題目 {j}") for j in range(1, 4)]
                 for i in range(1, days + 1)
@@ -200,7 +200,7 @@ class FakeLLMClient:
                     {
                         "type": "checklist",
                         "title": "檢查清單",
-                        "body": "- 能用自己的話說明今日主題\n- 能說出必讀檔職責\n- 完成小測",
+                        "body": "- 能用自己的話說明今日主題\n- 能說出必讀檔職責\n- 完成每日查核",
                         "paths": [],
                     },
                 ],
@@ -266,7 +266,7 @@ class FakeLLMClient:
                             {
                                 "type": "checklist",
                                 "title": "檢查清單",
-                                "body": "- 能用自己的話說明今日主題\n- 能說出必讀檔職責\n- 完成小測",
+                                "body": "- 能用自己的話說明今日主題\n- 能說出必讀檔職責\n- 完成每日查核",
                                 "paths": [],
                             },
                         ],

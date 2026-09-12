@@ -1037,6 +1037,7 @@ button.back-lesson {
   display: flex;
   gap: 0.45rem;
   align-items: center;
+  flex-wrap: wrap;
   margin-bottom: 0.35rem;
 }
 
@@ -1055,6 +1056,25 @@ button.back-lesson {
 .gap-sev.sev-high {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+
+.gap-status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.gap-status {
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 0.25rem 0.4rem;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
 }
 
 .gap-title {

@@ -1,6 +1,6 @@
 # 交接學習平台 — Backend
 
-上傳專案 ZIP → LangGraph 產出課綱／測驗 → 網站依天學習（每日教材、小測、筆記 PDF、心智圖、nano-graphrag 學習小助手）。
+上傳專案 ZIP → LangGraph 產出課綱／測驗 → 網站依天學習（每日教材、每日查核、筆記 PDF、nano-graphrag 學習小助手）。
 
 ## 架構
 
@@ -31,7 +31,7 @@ backend/
 | 線 | 入口 | 職責 |
 |----|------|------|
 | Job | `POST /api/jobs` | ZIP → pipeline → artifacts／ZIP／PDF |
-| Plan | `/api/plans/{id}/…` | 課綱／每日／測驗／缺口／心智圖／小助手／筆記 PDF |
+| Plan | `/api/plans/{id}/…` | 課綱／每日／測驗／缺口／小助手／筆記 PDF |
 
 ### Pipeline（主幹，擋 Job 完成）
 
@@ -56,7 +56,7 @@ handover_gaps → outline → day_writer → quiz_smith → validate
 | handover_gaps | 文件／卡片矛盾缺口（LLM） |
 | outline | 學習計畫（LLM，`PLAN_SYSTEM`） |
 | day_writer | **按天並行 LLM**（最多 3 workers，`DAY_WRITER_SYSTEM`）；失敗／過薄則規則 fallback |
-| quiz_smith | 每日／期中／期末（LLM，`QUIZ_SMITH_SYSTEM`）；題數不足再 pad |
+| quiz_smith | 每日查核／交接期中查核／上手驗收（LLM，`QUIZ_SMITH_SYSTEM`）；題數不足再 pad |
 | validate / repair | 契約驗收；未過則 Planner→Worker→Critic |
 | render → export_pdf → package | 架構圖、PDF、ZIP |
 
@@ -148,10 +148,14 @@ Invoke-WebRequest http://127.0.0.1:8000/api/jobs/$jobId/download/pdf -OutFile ha
 ## 測試
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest tests/ -q
+$env:USE_FAKE_LLM="true"
+$env:EMBEDDING_BACKEND="fake"
+.\.venv\Scripts\python.exe -m pytest tests/ -q -k "not local_bge_embed_and_query"
 ```
+
+這是本專案的離線回歸基準：會完整跑 ingest 至 package 的 pipeline 與 API 測試，不會呼叫外部 LLM 或 embedding API。2026-09-12 的基準結果為 `63 passed, 1 deselected`；被排除的本機 BGE 測試需要先下載模型。
 
 ## 產出
 
-- 網站：課程卡片、每日教材／小測、期中期末、交接缺口、心智圖、側欄進度、學習小助手
+- 網站：課程卡片、每日教材／每日查核、交接期中查核、上手驗收、交接缺口、側欄進度、學習小助手
 - ZIP：markdown、cards、days JSON、每日 `*-notes.pdf`、總包 PDF、diagrams

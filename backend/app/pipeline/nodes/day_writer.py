@@ -248,7 +248,7 @@ def _legacy_from_plan(plan: LearningPlan) -> dict:
         "overview": (
             "# 概覽\n\n"
             f"本交接教材共 {plan.days} 天"
-            f"（期中約第 {plan.midterm_day} 天）。\n\n"
+            f"（交接期中查核約第 {plan.midterm_day} 天）。\n\n"
             f"主題含：{themes or '專案交接'}。\n"
             "請依每日教材建立架構心智模型，再深入模組與操作。\n"
         ),

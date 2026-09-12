@@ -228,6 +228,33 @@ const GAP_SEV_LABEL = {
   low: "低",
 };
 
+const GAP_STATUS_LABEL = {
+  unresolved: "未解決",
+  confirmed: "已請前任確認",
+  resolved: "已解決",
+};
+
+async function updateGapStatus(gapId, status, select, previous) {
+  select.disabled = true;
+  try {
+    const response = await fetch(`/api/plans/${planId}/gaps/${encodeURIComponent(gapId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const report = await response.json();
+    if (!response.ok) {
+      throw new Error(fmtDetail(report.detail) || "無法更新交接缺口狀態");
+    }
+    renderGaps(report);
+  } catch (error) {
+    select.value = previous;
+    gapsSummary.textContent = String(error.message || error);
+  } finally {
+    select.disabled = false;
+  }
+}
+
 function renderGaps(report) {
   const gaps = (report && report.gaps) || [];
   const summary = (report && report.summary) || {};
@@ -247,17 +274,25 @@ function renderGaps(report) {
     li.className = "gap-item";
     const kind = GAP_KIND_LABEL[g.kind] || g.kind || "缺漏";
     const sev = GAP_SEV_LABEL[g.severity] || g.severity || "";
+    const status = g.status || "unresolved";
     const sources = (g.sources || []).map((p) => `<code>${escapeHtml(p)}</code>`).join(" ");
     li.innerHTML = `
       <div class="gap-head">
         <span class="gap-kind">${escapeHtml(kind)}</span>
         ${sev ? `<span class="gap-sev sev-${escapeHtml(g.severity || "medium")}">${escapeHtml(sev)}</span>` : ""}
+        <label class="gap-status-label">狀態
+          <select class="gap-status" aria-label="${escapeHtml(g.title || "交接缺口")} 的狀態">
+            ${Object.entries(GAP_STATUS_LABEL).map(([value, label]) => `<option value="${value}"${value === status ? " selected" : ""}>${label}</option>`).join("")}
+          </select>
+        </label>
       </div>
       <h3 class="gap-title">${escapeHtml(g.title || "未命名缺漏")}</h3>
       <p class="gap-detail">${escapeHtml(g.detail || "")}</p>
       ${sources ? `<p class="gap-sources">依據：${sources}</p>` : ""}
       <p class="gap-q"><span class="gap-q-label">可能疑問</span>${escapeHtml(g.question || "")}</p>
     `;
+    const statusSelect = li.querySelector(".gap-status");
+    statusSelect.addEventListener("change", () => updateGapStatus(g.id, statusSelect.value, statusSelect, status));
     gapsList.appendChild(li);
   }
 }
@@ -428,8 +463,8 @@ function setMilestone(btn, unlocked) {
   btn.classList.toggle("is-locked", !unlocked);
   if (btn === btnFinal) {
     btn.title = unlocked
-      ? "已通過全部每日測驗，可作答期末"
-      : "需通過全部每日測驗後才能解鎖期末";
+      ? "已通過全部每日查核，可進行上手驗收"
+      : "需通過全部每日查核後才能解鎖上手驗收";
   }
 }
 
@@ -512,7 +547,7 @@ async function loadQuiz(scope, day) {
     return;
   }
   const items = data.items || [];
-  const title = scope === "day" ? `Day ${day} 小測` : scope === "midterm" ? "期中測驗" : "期末測驗";
+  const title = scope === "day" ? `Day ${day} 每日查核` : scope === "midterm" ? "交接期中查核" : "上手驗收";
   let html = "";
   if (scope === "day") {
     html += `<button type="button" class="back-lesson" id="btnBackLesson">← 返回教材</button>`;
@@ -575,8 +610,8 @@ function openMilestone(scope, title, hint) {
     const progress = (planData && planData.progress) || {};
     if (!allDayQuizzesPassed(progress) || btnFinal.disabled) {
       dayView.innerHTML =
-        `<h2 class="milestone-heading">期末測驗</h2>` +
-        `<p class="err">需先通過全部每日測驗後才能解鎖期末。</p>`;
+        `<h2 class="milestone-heading">上手驗收</h2>` +
+        `<p class="err">需先通過全部每日查核後才能解鎖上手驗收。</p>`;
       showView("learn");
       return;
     }
@@ -771,12 +806,12 @@ btnToggleSidebar.addEventListener("click", () => {
   applySidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));
 });
 
-btnMid.onclick = () => openMilestone("midterm", "期中測驗", "進度已達半，可開始作答。");
+btnMid.onclick = () => openMilestone("midterm", "交接期中查核", "學習進度已達半，可開始作答。");
 btnFinal.onclick = () =>
   openMilestone(
     "final",
-    "期末測驗",
-    "需先通過全部每日測驗後才能作答。"
+    "上手驗收",
+    "需先通過全部每日查核後才能作答。"
   );
 btnClearAll.onclick = () => {
   saveRecent([]);

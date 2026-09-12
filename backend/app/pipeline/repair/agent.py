@@ -34,7 +34,7 @@ PLANNER_SYSTEM = """你是「課綱修復規劃師（Planner）」。你只負�
 Worker 可用工具（白名單）：
 - list_issues：查看目前 issues（args 空）
 - rewrite_days：補每日教材，args={"days":[2,3]}（天數須在契約範圍內）
-- top_up_quizzes：補足小測／期中／期末題數（args 空）
+- top_up_quizzes：補足每日查核／交接期中查核／上手驗收題數（args 空）
 - search_chunks：搜尋索引，args={"query":"...","k":4}
 
 規則：

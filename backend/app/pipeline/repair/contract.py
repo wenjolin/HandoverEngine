@@ -28,7 +28,7 @@ class AcceptanceContract:
             f"驗收契約（必須全部滿足才算成功）：\n"
             f"- learning_plan 天數完整，且與 options.days={options.days} 對齊（不一致僅警告）\n"
             f"- 每天存在 artifacts/days/{{i}}.json\n"
-            f"- 每天小測 ≥ {self.min_day_quizzes} 題；期中 ≥ {self.min_midterm}；期末 ≥ {self.min_final}\n"
+            f"- 每日查核 ≥ {self.min_day_quizzes} 題；交接期中查核 ≥ {self.min_midterm}；上手驗收 ≥ {self.min_final}\n"
             f"- 僅 Critic（程式驗證）可判定通過；Planner/Worker 不得自行宣布成功\n"
             f"- 規劃輪次上限 {self.max_plan_rounds}；每輪最多 {self.max_worker_actions_per_round} 個動作\n"
         )

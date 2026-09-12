@@ -72,7 +72,7 @@ def _write_quiz_md(artifacts: Path, bank: QuizBank) -> None:
     quizzes_dir = artifacts / "quizzes"
     quizzes_dir.mkdir(parents=True, exist_ok=True)
     for day, items in bank.day_quizzes.items():
-        lines = [f"# Day{day} 小測", ""]
+        lines = [f"# Day{day} 每日查核", ""]
         for i, q in enumerate(items, 1):
             lines.append(f"{i}. {q.stem}")
             if q.choices:
@@ -81,8 +81,8 @@ def _write_quiz_md(artifacts: Path, bank: QuizBank) -> None:
             lines.append("")
         (quizzes_dir / f"day{day}.md").write_text("\n".join(lines), encoding="utf-8")
 
-    def dump(name: str, items: list[QuizItem]) -> None:
-        lines = [f"# {name}", ""]
+    def dump(name: str, title: str, items: list[QuizItem]) -> None:
+        lines = [f"# {title}", ""]
         for i, q in enumerate(items, 1):
             lines.append(f"{i}. {q.stem}")
             if q.choices:
@@ -91,8 +91,8 @@ def _write_quiz_md(artifacts: Path, bank: QuizBank) -> None:
             lines.append("")
         (quizzes_dir / f"{name}.md").write_text("\n".join(lines), encoding="utf-8")
 
-    dump("midterm", bank.midterm)
-    dump("final", bank.final)
+    dump("midterm", "交接期中查核", bank.midterm)
+    dump("final", "上手驗收", bank.final)
 
 
 def _slim_card(c: dict) -> dict:

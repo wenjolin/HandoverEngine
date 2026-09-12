@@ -14,6 +14,7 @@ from app.db.sqlite import init_db
 from app.models.enums import JobStatus
 from app.models.schemas import JobOptions, JobPublic
 from app.pipeline.nodes.export_pdf import run_export_pdf
+from app.pipeline.nodes.package import run_package
 from app.pipeline.runner import run_job
 from app.services.learning.pdf_export import pdf_looks_ok
 
@@ -94,6 +95,15 @@ def download_zip(job_id: str) -> FileResponse:
         raise HTTPException(status_code=404, detail="找不到 Job")
     if job.status != JobStatus.done or not job.output_zip_path or not job.output_zip_path.is_file():
         raise HTTPException(status_code=409, detail="Job 尚未完成或 zip 不存在")
+    work = Path(job.work_dir)
+    try:
+        # Rebuild legacy packages on first download so bundled PDFs use the
+        # current layout instead of an old, malformed export.
+        if not pdf_looks_ok(work / "artifacts" / "handover-pack.pdf"):
+            run_export_pdf(work)
+            run_package(work)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"更新 PDF 匯出檔失敗：{exc}") from exc
     return FileResponse(
         path=job.output_zip_path,
         filename="handover-pack.zip",

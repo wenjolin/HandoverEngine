@@ -46,6 +46,7 @@ def day_package_to_notes_markdown(pkg: DayPackage) -> str:
 
 # kaiu/DFKai-SB embeds with wrong advances in fpdf2 → overlapping glyphs.
 _BAD_PDF_FONTS = (b"DFKai-SB", b"KaiTi", "標楷體".encode("utf-8"))
+_PDF_LAYOUT_CREATOR = "Handover Learning Pack PDF Layout 2"
 
 
 @lru_cache(maxsize=1)
@@ -96,6 +97,11 @@ def _strip_md_inline(text: str) -> str:
 
 
 class _NotesPDF(FPDF):
+    def header(self) -> None:
+        """Paint an opaque white page so macOS preview never shows a dark canvas."""
+        self.set_fill_color(255, 255, 255)
+        self.rect(0, 0, self.w, self.h, style="F")
+
     def footer(self) -> None:
         self.set_y(-15)
         self.set_font(self._cjk_family, size=9)
@@ -108,27 +114,56 @@ def _markdown_to_pdf_fpdf(markdown: str, pdf_path: Path, *, title: str) -> Path:
     family = "cjk"
     pdf = _NotesPDF(format="A4")
     pdf._cjk_family = family  # type: ignore[attr-defined]
-    pdf.set_auto_page_break(auto=True, margin=18)
-    pdf.set_margins(left=16, top=16, right=16)
-    pdf.add_page()
+    pdf.set_creator(_PDF_LAYOUT_CREATOR)
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_margins(left=18, top=18, right=18)
     add_kwargs: dict = {}
     if font_path.suffix.lower() == ".ttc":
         add_kwargs["collection_font_number"] = font_index
     pdf.add_font(family, "", str(font_path), **add_kwargs)
-    pdf.set_text_color(45, 52, 72)
+    pdf.add_page()
 
-    def write_line(text: str, *, size: int = 11, ln: float = 8) -> None:
+    def write_line(
+        text: str,
+        *,
+        size: float = 11,
+        line_height: float = 7.5,
+        color: tuple[int, int, int] = (38, 46, 62),
+    ) -> None:
         pdf.set_x(pdf.l_margin)
         pdf.set_font(family, size=size)
+        # footer() changes the colour. Reset it for every block after page breaks.
+        pdf.set_text_color(*color)
         safe = _strip_md_inline(text)
         if not safe.strip():
-            pdf.ln(ln * 0.4)
+            pdf.ln(line_height * 0.35)
             return
-        # Avoid rare glyphs missing from some CJK fonts (e.g. bullet).
-        safe = safe.replace("\u2022", "-").replace("\u00b7", "-")
-        # Line height slightly above font size to avoid vertical crowding.
-        row_h = max(ln, size * 0.55)
-        pdf.multi_cell(0, row_h, safe, new_x="LMARGIN", new_y="NEXT")
+        # CJK has no word boundaries and source paths may be long. Character wrapping
+        # prevents clipped lines; left alignment avoids FPDF's stretched justification.
+        safe = safe.replace("\u2022", "-").replace("\u00b7", "-").replace("\t", "    ")
+        pdf.multi_cell(
+            0,
+            line_height,
+            safe,
+            align="L",
+            max_line_height=line_height,
+            new_x="LMARGIN",
+            new_y="NEXT",
+            wrapmode="CHAR",
+        )
+
+    def write_heading(text: str, *, level: int) -> None:
+        if level == 1:
+            if pdf.will_page_break(15):
+                pdf.add_page()
+            write_line(text or title, size=18, line_height=11, color=(24, 48, 82))
+            pdf.ln(2)
+            return
+        if pdf.will_page_break(13):
+            pdf.add_page()
+        pdf.ln(1.5)
+        write_line(text, size=14 if level == 2 else 12, line_height=8.5, color=(29, 86, 142))
+        pdf.ln(0.5)
 
     in_code = False
     for raw in markdown.splitlines():
@@ -137,22 +172,20 @@ def _markdown_to_pdf_fpdf(markdown: str, pdf_path: Path, *, title: str) -> Path:
             in_code = not in_code
             continue
         if in_code:
-            write_line(line, size=9, ln=6)
+            write_line(line, size=9.5, line_height=6.5, color=(52, 58, 68))
             continue
         if line.startswith("# "):
-            write_line(line[2:].strip() or title, size=18, ln=11)
-            pdf.ln(2)
+            write_heading(line[2:].strip(), level=1)
         elif line.startswith("## "):
-            pdf.ln(2)
-            write_line(line[3:].strip(), size=14, ln=9)
+            write_heading(line[3:].strip(), level=2)
         elif line.startswith("### "):
-            write_line(line[4:].strip(), size=12, ln=8)
+            write_heading(line[4:].strip(), level=3)
         elif line.startswith("- "):
-            write_line("- " + line[2:].strip(), size=11, ln=7.5)
+            write_line("- " + line[2:].strip(), size=10.5, line_height=7.2)
         elif line.strip() == "":
-            pdf.ln(3)
+            pdf.ln(2.5)
         else:
-            write_line(line, size=11, ln=7.5)
+            write_line(line, size=10.5, line_height=7.2)
 
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(pdf_path))
@@ -259,6 +292,8 @@ def pdf_looks_ok(path: Path) -> bool:
     if len(data) < 800 or not data.startswith(b"%PDF"):
         return False
     if b"/BaseFont /Helvetica" in data and len(data) < 2500:
+        return False
+    if _PDF_LAYOUT_CREATOR.encode("ascii") not in data:
         return False
     # fpdf2 + DFKai-SB (kaiu) produces overlapping CJK; force regenerate.
     if any(marker in data for marker in _BAD_PDF_FONTS):

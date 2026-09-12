@@ -17,6 +17,7 @@ from app.models.schemas import (
     AssistantAskResponse,
     GapCreateRequest,
     GapStatusUpdateRequest,
+    PlanGapsResponse,
     QuizAttempt,
     QuizItem,
     QuizSubmitRequest,
@@ -127,14 +128,14 @@ def get_plan(plan_id: str) -> dict:
     }
 
 
-@router.get("/{plan_id}/gaps")
+@router.get("/{plan_id}/gaps", response_model=PlanGapsResponse)
 def get_gaps(plan_id: str) -> dict:
     work = _work_dir(plan_id)
     report = load_handover_gaps(work)
     return {"id": plan_id, **report}
 
 
-@router.patch("/{plan_id}/gaps/{gap_id}")
+@router.patch("/{plan_id}/gaps/{gap_id}", response_model=PlanGapsResponse)
 def update_gap_status(
     plan_id: str, gap_id: str, body: GapStatusUpdateRequest
 ) -> dict:
@@ -149,7 +150,7 @@ def update_gap_status(
     raise HTTPException(status_code=404, detail="找不到此交接缺口")
 
 
-@router.post("/{plan_id}/gaps", status_code=201)
+@router.post("/{plan_id}/gaps", status_code=201, response_model=PlanGapsResponse)
 def create_manual_gap(plan_id: str, body: GapCreateRequest) -> dict:
     work = _work_dir(plan_id)
     report = load_handover_gaps(work)
@@ -229,7 +230,7 @@ def get_day(plan_id: str, day: int) -> dict:
     key = str(day)
     if progress.day_status.get(key) == DayProgressStatus.unread:
         progress.day_status[key] = DayProgressStatus.reading
-    # 每次讀取都重算解鎖狀態，避免舊 progress.json 殘留 final_unlocked
+    # 每次讀取都重算解鎖狀態，避免舊 progress.json 殘留上手驗收的解鎖值
     progress = recompute_progress(plan, progress)
     save_progress(work, progress)
     notes_ready = day_notes_pdf_path(work, day).is_file()

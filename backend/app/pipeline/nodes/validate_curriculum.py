@@ -74,7 +74,7 @@ def run_validate_curriculum(
                     "code": "day_quiz_short",
                     "day": i,
                     "message": (
-                        f"Day {i} 小測不足 {c.min_day_quizzes} 題（目前 {len(qs)}）"
+                        f"Day {i} 每日查核不足 {c.min_day_quizzes} 題（目前 {len(qs)}）"
                     ),
                 }
             )
@@ -83,7 +83,7 @@ def run_validate_curriculum(
             {
                 "code": "midterm_short",
                 "message": (
-                    f"期中測驗不足 {c.min_midterm} 題（目前 {len(bank.midterm)}）"
+                    f"交接期中查核不足 {c.min_midterm} 題（目前 {len(bank.midterm)}）"
                 ),
             }
         )
@@ -91,7 +91,7 @@ def run_validate_curriculum(
         issues.append(
             {
                 "code": "final_short",
-                "message": f"期末測驗不足 {c.min_final} 題（目前 {len(bank.final)}）",
+                "message": f"上手驗收不足 {c.min_final} 題（目前 {len(bank.final)}）",
             }
         )
 

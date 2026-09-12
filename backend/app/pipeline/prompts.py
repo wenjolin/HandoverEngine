@@ -354,9 +354,9 @@ QUIZ_SMITH_SYSTEM = """
 輸出語言：繁體中文（zh-TW）。
 
 【硬條件】
-- 每天小測 ≥ 3 題
-- 期中 midterm ≥ 10 題
-- 期末 final ≥ 20 題
+- 每日查核 ≥ 3 題
+- 交接期中查核（midterm）≥ 10 題
+- 上手驗收（final）≥ 20 題
 - 每題必須有 answer；mcq 必須有 choices（含正確答案）
 - citations.path 只能來自提供的 cards／day packages
 

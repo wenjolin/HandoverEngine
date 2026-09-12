@@ -91,8 +91,17 @@ def test_plans_day_quiz_and_progress(client, sample_zip_bytes):
     assert "gaps" in gbody
     assert "summary" in gbody
     assert isinstance(gbody["gaps"], list)
+    assert set(gbody["summary"]) == {
+        "total",
+        "coverage",
+        "structure",
+        "contradiction",
+        "manual",
+    }
     if gbody["gaps"]:
         assert gbody["gaps"][0].get("question")
+        assert gbody["gaps"][0]["status"] == "unresolved"
+        assert gbody["gaps"][0]["source_type"] == "auto"
 
 
 

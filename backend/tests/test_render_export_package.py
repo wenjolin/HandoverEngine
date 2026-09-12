@@ -4,6 +4,7 @@ from pathlib import Path
 from app.pipeline.nodes.export_pdf import run_export_pdf
 from app.pipeline.nodes.package import run_package
 from app.pipeline.nodes.render_diagrams import run_render_diagrams
+from app.services.learning.pdf_export import pdf_looks_ok
 
 
 def _seed_artifacts(tmp_path: Path) -> None:
@@ -40,6 +41,7 @@ def test_export_pdf_writes_file(tmp_path: Path):
     pdf = run_export_pdf(tmp_path)
     assert pdf.exists() and pdf.stat().st_size > 100
     assert pdf.read_bytes()[:4] == b"%PDF"
+    assert pdf_looks_ok(pdf)
 
 
 def test_export_pdf_writes_day_notes(tmp_path: Path):
@@ -58,6 +60,7 @@ def test_export_pdf_writes_day_notes(tmp_path: Path):
     run_export_pdf(tmp_path)
     notes = days / "1-notes.pdf"
     assert notes.exists() and notes.read_bytes()[:4] == b"%PDF"
+    assert pdf_looks_ok(notes)
 
 
 def test_package_contains_expected_members(tmp_path: Path):

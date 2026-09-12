@@ -169,6 +169,24 @@ class HandoverGap(BaseModel):
     updated_at: str | None = None
 
 
+class GapSummary(BaseModel):
+    total: int = 0
+    coverage: int = 0
+    structure: int = 0
+    contradiction: int = 0
+    manual: int = 0
+
+
+class HandoverGapsReport(BaseModel):
+    generated_at: str | None = None
+    summary: GapSummary = Field(default_factory=GapSummary)
+    gaps: list[HandoverGap] = Field(default_factory=list)
+
+
+class PlanGapsResponse(HandoverGapsReport):
+    id: str
+
+
 class GapStatusUpdateRequest(BaseModel):
     status: GapStatus
 

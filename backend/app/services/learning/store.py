@@ -89,7 +89,7 @@ def recompute_progress(plan: LearningPlan, progress: Progress) -> Progress:
     percent = round(100.0 * passed / total, 1)
     progress.percent_complete = percent
     progress.midterm_unlocked = percent >= 50.0
-    # 期末：必須通過「每一天」的每日測驗
+    # 上手驗收：必須通過「每一天」的每日查核
     progress.final_unlocked = passed == plan.days and plan.days > 0
     return progress
 
@@ -122,9 +122,20 @@ def load_handover_gaps(work_dir: Path) -> dict:
         }
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
-        return {"generated_at": None, "summary": {"total": 0, "manual": 0}, "gaps": []}
+        return {
+            "generated_at": None,
+            "summary": {
+                "total": 0,
+                "coverage": 0,
+                "structure": 0,
+                "contradiction": 0,
+                "manual": 0,
+            },
+            "gaps": [],
+        }
     summary = data.setdefault("summary", {})
-    summary.setdefault("manual", 0)
+    for key in ("total", "coverage", "structure", "contradiction", "manual"):
+        summary.setdefault(key, 0)
     for gap in data.setdefault("gaps", []):
         if isinstance(gap, dict):
             gap.setdefault("status", "unresolved")

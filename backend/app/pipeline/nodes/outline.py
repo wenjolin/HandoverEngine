@@ -85,7 +85,7 @@ def _normalize_plan(data: dict, days: int, language: str, cards: list[dict]) -> 
 
 
 def _write_plan_md(artifacts: Path, plan: LearningPlan) -> None:
-    lines = ["# 交接學習計畫", "", f"期中日：Day {plan.midterm_day}", ""]
+    lines = ["# 交接學習計畫", "", f"交接期中查核日：Day {plan.midterm_day}", ""]
     for item in plan.items:
         lines.append(f"## Day {item.day} — {item.theme}")
         lines.append("")
