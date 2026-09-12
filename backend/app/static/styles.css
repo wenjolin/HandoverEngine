@@ -986,6 +986,35 @@ button.back-lesson {
 /* —— Handover gaps —— */
 .gaps-panel { min-height: 280px; }
 
+.gap-create-form {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.9rem 0 1.2rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--soft);
+}
+
+.gap-create-copy h3 { margin: 0; font-size: 0.95rem; }
+.gap-create-copy p { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.84rem; }
+.gap-create-form label { font-size: 0.82rem; font-weight: 700; color: var(--ink); }
+.gap-create-form input,
+.gap-create-form textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.65rem 0.75rem;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+}
+.gap-create-form textarea { min-height: 76px; resize: vertical; }
+.gap-create-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.7rem; }
+.gap-create-actions button { margin: 0; }
+.gap-create-form .err { margin: 0; }
+
 .gap-list {
   list-style: none;
   margin: 0.85rem 0 0;

@@ -112,6 +112,21 @@
             <h2>交接缺口</h2>
             <span class="meta" id="gapsSummary">尚未載入</span>
           </div>
+          <form class="gap-create-form" id="gapCreateForm">
+            <div class="gap-create-copy">
+              <h3>新增自己的交接缺口</h3>
+              <p>記下需要向前任確認的問題，會保存在這份學習計畫中。</p>
+            </div>
+            <label for="gapTitle">缺口標題</label>
+            <input id="gapTitle" type="text" maxlength="160" required placeholder="例如：確認正式環境部署流程" />
+            <label for="gapQuestion">想詢問前任的問題</label>
+            <textarea id="gapQuestion" maxlength="200" required placeholder="例如：正式部署要依序執行哪些步驟？"></textarea>
+            <div class="gap-create-actions">
+              <button type="submit" id="gapCreateSubmit">新增缺口</button>
+              <span class="meta">標題最多 160 字，問題最多 200 字</span>
+            </div>
+            <p class="err" id="gapCreateError"></p>
+          </form>
           <p class="empty-hint" id="gapsEmpty">開啟計畫後，這裡會列出覆蓋／結構缺漏與文件矛盾，並附可能疑問。</p>
           <ul class="gap-list" id="gapsList"></ul>
         </div>
@@ -140,6 +155,6 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=20260912a" defer></script>
+  <script src="/static/app.js?v=20260912b" defer></script>
 </body>
 </html>

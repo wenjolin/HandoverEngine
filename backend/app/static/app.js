@@ -52,6 +52,11 @@ const btnToggleSidebar = document.getElementById("btnToggleSidebar");
 const gapsList = document.getElementById("gapsList");
 const gapsEmpty = document.getElementById("gapsEmpty");
 const gapsSummary = document.getElementById("gapsSummary");
+const gapCreateForm = document.getElementById("gapCreateForm");
+const gapTitle = document.getElementById("gapTitle");
+const gapQuestion = document.getElementById("gapQuestion");
+const gapCreateSubmit = document.getElementById("gapCreateSubmit");
+const gapCreateError = document.getElementById("gapCreateError");
 
 const VIEWS = {
   home: document.getElementById("viewHome"),
@@ -212,6 +217,7 @@ const GAP_KIND_LABEL = {
   coverage: "覆蓋",
   structure: "結構",
   contradiction: "矛盾",
+  manual: "手動新增",
 };
 
 const GAP_SEV_LABEL = {
@@ -225,7 +231,7 @@ function renderGaps(report) {
   const summary = (report && report.summary) || {};
   const total = summary.total != null ? summary.total : gaps.length;
   gapsSummary.textContent = total
-    ? `共 ${total} 項（覆蓋 ${summary.coverage || 0} · 結構 ${summary.structure || 0} · 矛盾 ${summary.contradiction || 0}）`
+    ? `共 ${total} 項（覆蓋 ${summary.coverage || 0} · 結構 ${summary.structure || 0} · 矛盾 ${summary.contradiction || 0} · 手動 ${summary.manual || 0}）`
     : "未發現缺漏";
   gapsList.innerHTML = "";
   if (!gaps.length) {
@@ -268,6 +274,39 @@ async function loadGaps(id) {
     gapsSummary.textContent = "載入失敗";
   }
 }
+
+gapCreateForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!planId) {
+    gapCreateError.textContent = "請先從課程首頁開啟一個計畫。";
+    return;
+  }
+  const title = gapTitle.value.trim();
+  const question = gapQuestion.value.trim();
+  if (!title || !question) {
+    gapCreateError.textContent = "請填寫缺口標題與想詢問的問題。";
+    return;
+  }
+  gapCreateSubmit.disabled = true;
+  gapCreateError.textContent = "";
+  try {
+    const response = await fetch(`/api/plans/${planId}/gaps`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, question }),
+    });
+    const report = await response.json();
+    if (!response.ok) {
+      throw new Error(fmtDetail(report.detail) || "無法新增交接缺口");
+    }
+    gapCreateForm.reset();
+    renderGaps(report);
+  } catch (error) {
+    gapCreateError.textContent = String(error.message || error);
+  } finally {
+    gapCreateSubmit.disabled = false;
+  }
+});
 
 function removeRecent(id) {
   saveRecent(loadRecent().filter((x) => x.job_id !== id));
