@@ -3,13 +3,13 @@ const LEGACY_KEY = "handover_plan_id";
 const MAX_RECENT = 20;
 const ST_LABEL = {
   unread: "未讀",
-  reading: "閱讀中",
-  passed: "已通過",
+  reading: "上手中",
+  passed: "已通過查核",
   failed: "未通過",
 };
 const VIEW_TITLES = {
-  home: "選擇課程開始學習",
-  learn: "每日學習",
+  home: "選擇交接項目，開始上手",
+  learn: "每日任務",
   gaps: "交接缺口",
 };
 
@@ -52,13 +52,11 @@ const btnToggleSidebar = document.getElementById("btnToggleSidebar");
 const gapsList = document.getElementById("gapsList");
 const gapsEmpty = document.getElementById("gapsEmpty");
 const gapsSummary = document.getElementById("gapsSummary");
-const gapCreateForm = document.getElementById("gapCreateForm");
-const gapTitle = document.getElementById("gapTitle");
-const gapQuestion = document.getElementById("gapQuestion");
-const gapCreateSubmit = document.getElementById("gapCreateSubmit");
-const gapCreateError = document.getElementById("gapCreateError");
-const gapExportPdf = document.getElementById("gapExportPdf");
-const gapExportError = document.getElementById("gapExportError");
+const gapAddForm = document.getElementById("gapAddForm");
+const gapAddTitle = document.getElementById("gapAddTitle");
+const gapAddQuestion = document.getElementById("gapAddQuestion");
+const btnToggleGapAdd = document.getElementById("btnToggleGapAdd");
+const btnExportGaps = document.getElementById("btnExportGaps");
 
 const VIEWS = {
   home: document.getElementById("viewHome"),
@@ -103,7 +101,7 @@ function setPlanNavEnabled(on) {
 function showView(name) {
   if (!VIEWS[name]) return;
   if ((name === "learn" || name === "gaps") && !planId) {
-    recentError.textContent = "請先從課程首頁開啟一個計畫";
+    recentError.textContent = "請先從交接首頁開啟一個交接項目";
     name = "home";
   }
   currentView = name;
@@ -113,7 +111,7 @@ function showView(name) {
   document.querySelectorAll(".nav-item[data-view]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.view === name);
   });
-  pageTitle.textContent = VIEW_TITLES[name] || "交接學習";
+  pageTitle.textContent = VIEW_TITLES[name] || "接棒引擎";
   btnNewUpload.classList.toggle("hidden", name !== "home");
   if (name !== "home") {
     uploadPanel.classList.add("hidden");
@@ -207,7 +205,9 @@ function clearActivePlanUi() {
   gapsList.innerHTML = "";
   gapsEmpty.classList.remove("hidden");
   gapsSummary.textContent = "尚未載入";
-  jobLabel.textContent = "尚未載入課程";
+  gapAddForm.reset();
+  gapAddForm.classList.add("hidden");
+  jobLabel.textContent = "尚未載入交接項目";
   const url = new URL(window.location.href);
   url.searchParams.delete("job");
   history.replaceState(null, "", url);
@@ -230,37 +230,21 @@ const GAP_SEV_LABEL = {
 
 const GAP_STATUS_LABEL = {
   unresolved: "未解決",
-  confirmed: "已請前任確認",
+  confirmed: "確認中",
   resolved: "已解決",
 };
-
-async function updateGapStatus(gapId, status, select, previous) {
-  select.disabled = true;
-  try {
-    const response = await fetch(`/api/plans/${planId}/gaps/${encodeURIComponent(gapId)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    const report = await response.json();
-    if (!response.ok) {
-      throw new Error(fmtDetail(report.detail) || "無法更新交接缺口狀態");
-    }
-    renderGaps(report);
-  } catch (error) {
-    select.value = previous;
-    gapsSummary.textContent = String(error.message || error);
-  } finally {
-    select.disabled = false;
-  }
-}
 
 function renderGaps(report) {
   const gaps = (report && report.gaps) || [];
   const summary = (report && report.summary) || {};
   const total = summary.total != null ? summary.total : gaps.length;
+  const statusCounts = { unresolved: 0, confirmed: 0, resolved: 0 };
+  gaps.forEach((gap) => {
+    const status = gap.status || "unresolved";
+    if (status in statusCounts) statusCounts[status] += 1;
+  });
   gapsSummary.textContent = total
-    ? `共 ${total} 項（覆蓋 ${summary.coverage || 0} · 結構 ${summary.structure || 0} · 矛盾 ${summary.contradiction || 0} · 手動 ${summary.manual || 0}）`
+    ? `共 ${total} 項（未解決 ${statusCounts.unresolved} · 確認中 ${statusCounts.confirmed} · 已解決 ${statusCounts.resolved}）`
     : "未發現缺漏";
   gapsList.innerHTML = "";
   if (!gaps.length) {
@@ -271,31 +255,91 @@ function renderGaps(report) {
   gapsEmpty.classList.add("hidden");
   for (const g of gaps) {
     const li = document.createElement("li");
-    li.className = "gap-item";
+    const status = g.status || "unresolved";
+    li.className = "gap-item" + (status === "resolved" ? " is-resolved" : "");
     const kind = GAP_KIND_LABEL[g.kind] || g.kind || "缺漏";
     const sev = GAP_SEV_LABEL[g.severity] || g.severity || "";
-    const status = g.status || "unresolved";
     const sources = (g.sources || []).map((p) => `<code>${escapeHtml(p)}</code>`).join(" ");
+    const statusOpts = Object.entries(GAP_STATUS_LABEL)
+      .map(([v, label]) => `<option value="${v}" ${v === status ? "selected" : ""}>${label}</option>`)
+      .join("");
     li.innerHTML = `
       <div class="gap-head">
         <span class="gap-kind">${escapeHtml(kind)}</span>
         ${sev ? `<span class="gap-sev sev-${escapeHtml(g.severity || "medium")}">${escapeHtml(sev)}</span>` : ""}
-        <label class="gap-status-label">狀態
-          <select class="gap-status" aria-label="${escapeHtml(g.title || "交接缺口")} 的狀態">
-            ${Object.entries(GAP_STATUS_LABEL).map(([value, label]) => `<option value="${value}"${value === status ? " selected" : ""}>${label}</option>`).join("")}
-          </select>
-        </label>
+        <select class="gap-status-select" data-id="${escapeHtml(g.id)}">${statusOpts}</select>
       </div>
-      <h3 class="gap-title">${escapeHtml(g.title || "未命名缺漏")}</h3>
+      <h3 class="gap-title">${status === "resolved" ? "✓ " : ""}${escapeHtml(g.title || "未命名缺漏")}</h3>
       <p class="gap-detail">${escapeHtml(g.detail || "")}</p>
       ${sources ? `<p class="gap-sources">依據：${sources}</p>` : ""}
       <p class="gap-q"><span class="gap-q-label">可能疑問</span>${escapeHtml(g.question || "")}</p>
     `;
-    const statusSelect = li.querySelector(".gap-status");
-    statusSelect.addEventListener("change", () => updateGapStatus(g.id, statusSelect.value, statusSelect, status));
+    const statusSelect = li.querySelector(".gap-status-select");
+    statusSelect.addEventListener("change", (e) => {
+      updateGapStatus(g.id, e.target.value, statusSelect, status);
+    });
     gapsList.appendChild(li);
   }
 }
+
+async function updateGapStatus(gapId, status, select, previous) {
+  select.disabled = true;
+  try {
+    const res = await fetch(`/api/plans/${planId}/gaps/${encodeURIComponent(gapId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(fmtDetail(data.detail) || "更新失敗");
+    }
+    renderGaps(data);
+  } catch (err) {
+    select.value = previous;
+    alert("更新交接缺口狀態失敗：" + err.message);
+  } finally {
+    select.disabled = false;
+  }
+}
+
+btnToggleGapAdd.addEventListener("click", () => {
+  gapAddForm.classList.toggle("hidden");
+  if (!gapAddForm.classList.contains("hidden")) gapAddTitle.focus();
+});
+
+gapAddForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!planId) {
+    alert("請先從交接首頁開啟一個交接項目。");
+    return;
+  }
+  const title = gapAddTitle.value.trim();
+  const question = gapAddQuestion.value.trim();
+  if (!title || !question) return;
+  try {
+    const res = await fetch(`/api/plans/${planId}/gaps`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, question }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(fmtDetail(data.detail) || "新增失敗");
+    renderGaps(data);
+    gapAddForm.reset();
+    gapAddForm.classList.add("hidden");
+  } catch (err) {
+    alert(String(err.message || err));
+  }
+});
+
+btnExportGaps.addEventListener("click", () => {
+  if (!planId) {
+    alert("請先從交接首頁開啟一個交接項目。");
+    return;
+  }
+  window.location.assign(`/api/plans/${planId}/gaps/export/pdf?status=all`);
+});
 
 async function loadGaps(id) {
   gapsSummary.textContent = "載入中…";
@@ -311,48 +355,6 @@ async function loadGaps(id) {
     gapsSummary.textContent = "載入失敗";
   }
 }
-
-gapCreateForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (!planId) {
-    gapCreateError.textContent = "請先從課程首頁開啟一個計畫。";
-    return;
-  }
-  const title = gapTitle.value.trim();
-  const question = gapQuestion.value.trim();
-  if (!title || !question) {
-    gapCreateError.textContent = "請填寫缺口標題與想詢問的問題。";
-    return;
-  }
-  gapCreateSubmit.disabled = true;
-  gapCreateError.textContent = "";
-  try {
-    const response = await fetch(`/api/plans/${planId}/gaps`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, question }),
-    });
-    const report = await response.json();
-    if (!response.ok) {
-      throw new Error(fmtDetail(report.detail) || "無法新增交接缺口");
-    }
-    gapCreateForm.reset();
-    renderGaps(report);
-  } catch (error) {
-    gapCreateError.textContent = String(error.message || error);
-  } finally {
-    gapCreateSubmit.disabled = false;
-  }
-});
-
-gapExportPdf.addEventListener("click", () => {
-  if (!planId) {
-    gapExportError.textContent = "請先從課程首頁開啟一個計畫。";
-    return;
-  }
-  gapExportError.textContent = "";
-  window.location.assign(`/api/plans/${planId}/gaps/export/pdf?status=all`);
-});
 
 function removeRecent(id) {
   saveRecent(loadRecent().filter((x) => x.job_id !== id));
@@ -394,11 +396,11 @@ function renderRecent() {
   const card = document.createElement("div");
   card.className = "recent-card" + (item.job_id === planId ? " active" : "");
   card.innerHTML =
-    `<p class="title">${escapeHtml(item.name || "學習計畫")}</p>` +
+    `<p class="title">${escapeHtml(item.name || "交接計畫")}</p>` +
     `<p class="meta">${escapeHtml(formatDateLabel(item.done_at))}` +
     `${item.days != null ? " · " + item.days + " 天" : ""}</p>` +
     `<div class="bar"><span style="width:${pct}%"></span></div>` +
-    `<div class="pct-label"><span>學習進度</span><span>${Math.round(pct)}%</span></div>`;
+    `<div class="pct-label"><span>交接進度</span><span>${Math.round(pct)}%</span></div>`;
   card.onclick = () => resumePlan(item.job_id);
   recentList.appendChild(card);
 }
@@ -417,7 +419,7 @@ function renderCourseCards() {
     const isActive = item.job_id === planId;
     const barPct = isActive ? pct : 0;
     card.innerHTML =
-      `<h3>${escapeHtml(item.name || "學習計畫")}</h3>` +
+      `<h3>${escapeHtml(item.name || "交接計畫")}</h3>` +
       `<p class="meta">${escapeHtml(formatDateLabel(item.done_at))} · ${item.days != null ? item.days + " 天" : "—"}</p>` +
       `<div class="bar"><span style="width:${barPct}%"></span></div>` +
       `<div class="card-actions"></div>`;
@@ -464,7 +466,7 @@ function setMilestone(btn, unlocked) {
   if (btn === btnFinal) {
     btn.title = unlocked
       ? "已通過全部每日查核，可進行上手驗收"
-      : "需通過全部每日查核後才能解鎖上手驗收";
+      : "需先通過全部每日查核後才能解鎖上手驗收";
   }
 }
 
@@ -656,7 +658,7 @@ assistantForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   assistantError.textContent = "";
   if (!planId) {
-    assistantError.textContent = "請先載入學習計畫";
+    assistantError.textContent = "請先載入交接計畫";
     openChatPanel();
     return;
   }
@@ -712,7 +714,7 @@ async function openLearn(id, meta) {
 
   const existing = findRecent(id);
   const days = (data.plan && data.plan.days) || (meta && meta.days) || (existing && existing.days) || null;
-  const name = (meta && meta.name) || (existing && existing.name) || "學習計畫";
+  const name = (meta && meta.name) || (existing && existing.name) || "交接計畫";
   upsertRecent({
     job_id: id,
     name,
@@ -724,7 +726,7 @@ async function openLearn(id, meta) {
   rememberPlan(id);
   setBadge("done");
   jobLabel.textContent = displayTitle(findRecent(id) || { name, days, done_at: new Date().toISOString() });
-  messageEl.textContent = "學習計畫已載入";
+  messageEl.textContent = "交接計畫已載入";
   jobBar.style.width = "100%";
   errorEl.textContent = "";
   recentError.textContent = "";
@@ -749,7 +751,7 @@ async function resumePlan(id) {
     if (!jobRes.ok) throw new Error(fmtDetail(job.detail) || "找不到紀錄");
     if (job.status !== "done") throw new Error(`狀態為 ${job.status}，尚未完成`);
     if (!(job.outputs && job.outputs.plan_ready)) {
-      throw new Error("此紀錄沒有學習計畫（請重新上傳）");
+      throw new Error("此紀錄沒有交接計畫（請重新上傳）");
     }
     await openLearn(trimmed);
   } catch (err) {
@@ -774,11 +776,11 @@ async function poll(jobId) {
     if (data.outputs && data.outputs.plan_ready) {
       const meta = pendingMeta && pendingMeta.job_id === jobId
         ? { ...pendingMeta, done_at: new Date().toISOString() }
-        : { name: "學習計畫", done_at: new Date().toISOString() };
+        : { name: "交接計畫", done_at: new Date().toISOString() };
       pendingMeta = null;
       await openLearn(jobId, meta);
     } else {
-      errorEl.textContent = "Job 完成但缺少學習計畫";
+      errorEl.textContent = "Job 完成但缺少交接計畫";
     }
     return;
   }
@@ -806,7 +808,7 @@ btnToggleSidebar.addEventListener("click", () => {
   applySidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));
 });
 
-btnMid.onclick = () => openMilestone("midterm", "交接期中查核", "學習進度已達半，可開始作答。");
+btnMid.onclick = () => openMilestone("midterm", "交接期中查核", "進度已達半，可開始作答。");
 btnFinal.onclick = () =>
   openMilestone(
     "final",
@@ -878,7 +880,7 @@ form.addEventListener("submit", async (e) => {
   } catch (_) {
     applySidebarCollapsed(false);
   }
-  // 預設停在課程首頁；有 ?job= 時僅預載計畫狀態，不自動跳每日學習
+  // 預設停在交接首頁；有 ?job= 時僅預載計畫狀態，不自動跳每日任務
   const params = new URLSearchParams(window.location.search);
   const fromQuery = params.get("job");
   const recent = loadRecent();
@@ -898,13 +900,13 @@ form.addEventListener("submit", async (e) => {
     const existing = findRecent(id);
     upsertRecent({
       job_id: id,
-      name: (existing && existing.name) || "學習計畫",
+      name: (existing && existing.name) || "交接計畫",
       days: (data.plan && data.plan.days) || (existing && existing.days) || null,
       done_at: (existing && existing.done_at) || new Date().toISOString(),
       percent_complete: (data.progress && data.progress.percent_complete) || 0,
     });
     rememberPlan(id);
-    jobLabel.textContent = displayTitle(findRecent(id) || { name: "學習計畫" });
+    jobLabel.textContent = displayTitle(findRecent(id) || { name: "交接計畫" });
     setPlanNavEnabled(true);
     renderProgress(data.progress);
     showView("home");
