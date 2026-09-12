@@ -155,6 +155,13 @@ def test_gap_management_and_export(client, sample_zip_bytes):
     assert all_exported.status_code == 200
     assert "需確認部署方式" in all_exported.text
 
+    exported_pdf = c.get(f"/api/plans/{job_id}/gaps/export/pdf?status=all")
+    assert exported_pdf.status_code == 200
+    assert exported_pdf.headers["content-type"].startswith("application/pdf")
+    assert "handover-gaps-questions.pdf" in exported_pdf.headers["content-disposition"]
+    assert exported_pdf.content.startswith(b"%PDF")
+    assert len(exported_pdf.content) > 800
+
 
 def test_assistant_fake_mode(client, sample_zip_bytes, monkeypatch):
     c, settings, repo = client

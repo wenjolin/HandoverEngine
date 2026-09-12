@@ -985,6 +985,8 @@ button.back-lesson {
 
 /* —— Handover gaps —— */
 .gaps-panel { min-height: 280px; }
+.gap-head-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 0.55rem; }
+.gap-export-btn { margin: 0; padding: 0.45rem 0.7rem; font-size: 0.8rem; }
 
 .gap-create-form {
   display: grid;

@@ -10,7 +10,7 @@ from pathlib import Path
 from fpdf import FPDF
 
 from app.models.schemas import DayPackage
-from app.services.learning.store import load_day_package
+from app.services.learning.store import artifacts_dir, load_day_package
 
 
 def day_package_to_notes_markdown(pkg: DayPackage) -> str:
@@ -167,6 +167,42 @@ def markdown_text_to_pdf(
 ) -> Path:
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     return _markdown_to_pdf_fpdf(markdown, pdf_path, title=title)
+
+
+def handover_gaps_to_questions_markdown(gaps: list[dict]) -> str:
+    """Format handover gaps as a concise, printable question list."""
+    kind_labels = {
+        "coverage": "覆蓋",
+        "structure": "結構",
+        "contradiction": "矛盾",
+        "manual": "手動新增",
+    }
+    lines = [f"# 交接缺口問題清單（{len(gaps)} 項）", ""]
+    for index, gap in enumerate(gaps, start=1):
+        kind = kind_labels.get(str(gap.get("kind") or ""), str(gap.get("kind") or ""))
+        lines.extend(
+            [
+                f"## {index}. [{kind}] {gap.get('title', '')}",
+                "",
+                f"疑問：{gap.get('question', '')}",
+            ]
+        )
+        if gap.get("detail"):
+            lines.append(f"說明：{gap['detail']}")
+        if gap.get("sources"):
+            lines.append(f"依據：{', '.join(str(p) for p in gap['sources'])}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def export_handover_gaps_pdf(work_dir: Path, gaps: list[dict]) -> Path:
+    """Create a downloadable PDF of selected handover-gap questions."""
+    path = artifacts_dir(work_dir) / "handover-gaps-questions.pdf"
+    return markdown_text_to_pdf(
+        handover_gaps_to_questions_markdown(gaps),
+        path,
+        title="交接缺口問題清單",
+    )
 
 
 def markdown_files_to_pdf(

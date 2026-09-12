@@ -32,7 +32,11 @@ from app.services.learning.store import (
     save_handover_gaps,
     save_progress,
 )
-from app.services.learning.pdf_export import day_notes_pdf_path, ensure_day_notes_pdf
+from app.services.learning.pdf_export import (
+    day_notes_pdf_path,
+    ensure_day_notes_pdf,
+    export_handover_gaps_pdf,
+)
 from app.services.learning.quiz_utils import answers_match, normalize_day_key
 from app.services.rate_limit import SlidingWindowRateLimiter
 from app.services.secrets_filter import is_ignored_path, is_secret_path
@@ -192,6 +196,25 @@ def export_gaps(plan_id: str, status: str = "unresolved") -> PlainTextResponse:
     return PlainTextResponse(
         "\n".join(lines),
         headers={"Content-Disposition": "attachment; filename=handover-gaps-questions.txt"},
+    )
+
+
+@router.get("/{plan_id}/gaps/export/pdf")
+def export_gaps_pdf(plan_id: str, status: str = "all") -> FileResponse:
+    if status not in {"unresolved", "confirmed", "resolved", "all"}:
+        raise HTTPException(status_code=422, detail="status 無效")
+    work = _work_dir(plan_id)
+    gaps = load_handover_gaps(work).get("gaps", [])
+    if status != "all":
+        gaps = [gap for gap in gaps if gap.get("status", "unresolved") == status]
+    try:
+        pdf_path = export_handover_gaps_pdf(work, gaps)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"產生交接缺口 PDF 失敗：{exc}") from exc
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename="handover-gaps-questions.pdf",
     )
 
 

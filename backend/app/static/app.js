@@ -57,6 +57,8 @@ const gapTitle = document.getElementById("gapTitle");
 const gapQuestion = document.getElementById("gapQuestion");
 const gapCreateSubmit = document.getElementById("gapCreateSubmit");
 const gapCreateError = document.getElementById("gapCreateError");
+const gapExportPdf = document.getElementById("gapExportPdf");
+const gapExportError = document.getElementById("gapExportError");
 
 const VIEWS = {
   home: document.getElementById("viewHome"),
@@ -306,6 +308,15 @@ gapCreateForm.addEventListener("submit", async (event) => {
   } finally {
     gapCreateSubmit.disabled = false;
   }
+});
+
+gapExportPdf.addEventListener("click", () => {
+  if (!planId) {
+    gapExportError.textContent = "請先從課程首頁開啟一個計畫。";
+    return;
+  }
+  gapExportError.textContent = "";
+  window.location.assign(`/api/plans/${planId}/gaps/export/pdf?status=all`);
 });
 
 function removeRecent(id) {

@@ -110,7 +110,10 @@
         <div class="widget gaps-panel">
           <div class="section-head">
             <h2>交接缺口</h2>
-            <span class="meta" id="gapsSummary">尚未載入</span>
+            <div class="gap-head-actions">
+              <span class="meta" id="gapsSummary">尚未載入</span>
+              <button type="button" class="ghost gap-export-btn" id="gapExportPdf">匯出全部 PDF</button>
+            </div>
           </div>
           <form class="gap-create-form" id="gapCreateForm">
             <div class="gap-create-copy">
@@ -127,6 +130,7 @@
             </div>
             <p class="err" id="gapCreateError"></p>
           </form>
+          <p class="err" id="gapExportError"></p>
           <p class="empty-hint" id="gapsEmpty">開啟計畫後，這裡會列出覆蓋／結構缺漏與文件矛盾，並附可能疑問。</p>
           <ul class="gap-list" id="gapsList"></ul>
         </div>
@@ -155,6 +159,6 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=20260912b" defer></script>
+  <script src="/static/app.js?v=20260912c" defer></script>
 </body>
 </html>
